@@ -1,0 +1,856 @@
+[/] 🔳🔳🔳🔳🔳 Implement a C vector (again! ... I last did it like 5 years ago)
+    [x] start with naive implementation
+    [x] refactor to use `capacity` in unit tests...
+    [-] make more tests for new/overlooked null cases
+        [x] trivial Vec_new()
+            [x] with 0 cap?
+        [x] trivial Vec_destroy() test, convert to double pointer
+        [x] Vec_equal()
+            [x] null vector
+                [x] one
+                [x] both
+            [x] with special comparator
+        [x] Vec_has()
+            [x] null vector
+            [x] with special comparator
+        [x] do-nothing cases on Vec_make_contiguous()
+            [x] null vector
+            [x] vector too small
+            [x] vector empty
+            [x] vector full
+        [x] do-nothing cases on Vec_resize()
+            [x] null vector
+            [x] new cap = current cap
+            [x] new cap < current n
+        [x] null on Vec_append()
+            [x] null vector
+        [-] general testing Vec_remove()
+        [-] null on Vec_remove()
+            [-] null vector
+            [-] index out of bounds
+    [x] also, we GOTTA look at that ADT stuff in TDDfEC
+        - the hope is that the ADT design can serve as a "multiple-instance module" with encapsulation
+        ! page 194
+            ```
+            For single-instance modules, the header file defines everything needed to
+            interact with the module, including the enum for specifying time constants,
+            as well as the function prototypes.
+            ```
+            - "Single-instance modules" are appropriate for some singleton god object -- something you'll never have more than one of.
+            - But, for vectors, which we probably want several of in a program, we need a "multiple-instance module" implementation:
+            ```
+            Sometimes an application needs several instances of a module that contain
+            different data and state. For example, an application might need several first-
+            in first-out data structures.
+            . . .
+            Each instance . . . may have its own unique capacity and current contents.
+            ```
+        - look for "CircularBuffer" section, showing how to use a `TEST_GROUP` to test print functionality
+        - look at section 3.1 on page 27 for an example of the "multiple-instance module" pattern
+        - refer to section 11.2 for different software design models (single-instance, multi-instance, etc.)
+            [-] can we maybe put these in the `recall_c_h` code?
+            [x] nah, just put them in C sandbox
+                [x] make multiple-instance module example
+                    [x] put multiple-instance module example into sandbox
+                    [x] make single-instance module example
+                    [x] put single-instance module example into sandbox
+    [y] should we refactor the vector to a multiple-instance module ADT?
+        [x] do so
+    [x] add getters
+    [x] Make encapsulated name the same as internal name (they don't have to differ!)
+    [x] Refactor so that vector takes ownership of allocated memory, so that caller doesn't have to alloc or free their own stuff
+        [x] also ensure contiguity at all times, so don't implement an insert method
+            [x] remove insert method
+            [x] make "make contiguous" method private
+            [x] refactor code to new form
+            [x] add size arg to all functions that take `item`s
+                - this acts as a (perhaps overboard) way to remind the user to check whether the byte size of the object they're adding/looking for matches the vector's declared data type size
+                - without this, we have no way of checking (for the user's sake) that a thing we're adding to the vector is not the vector's promised element size
+                - when finding elements, we also have no way to know whether we only have 99 of the 100 B of an item the user is asking for (in case the comparator the caller supplied only checks the first 25 B of elements, say)
+                - if/when we start returning `bool` from append, we can inform the user of the outcome of this check
+                    - otherwise, the outcome is only communicated as "the item was not added to the vector; nothing was done"
+                [x] refactor function implementations to use new params
+        [x] instead of `void**` for data, use a `uint8_t*` block
+            - taking ownership of allocation and deallocation greatly improves caller UX *AND* is way more performant
+            - `uint8_t*` allows pointer arithmetic, unlike `void*`
+                - the API can still use `void*` though, as this is more convenient since there's implicit casts with `void*` and there's a precedent for using it as a "generic pointer", unlike `uint8_t*`
+                - and why do we want to do byte-by-byte addressing?
+                    - because the element type is generic!
+                    - we have no idea how large elements are until runtime
+                    - they could be 1 byte, 5 bytes, or 13 bytes long
+                    - we can only treat them as `void*`s or `uint8_t*`s
+                    - and we can only traverse our data array if it's made of `uint8_t`s -- we can't if it's `void`s
+                    - and we need to traverse it to be able to countenance pointers inside of it
+                        - which we need to do when returning pointers to elements, removing elements, swapping elements, etc.
+            - see uint8_t_block_example.c
+            - no `free()`s necessary since everything's already been allocated in one big block!
+            [x] presumably, to delete elements, you would `memset(ptr, 0, ELT_SIZE)` that element's region of the memory block
+                - actually, no! this sets the value of some bytes pointed to by that pointer to 0
+                - what if the elements stored in the vector are bytes (e.g., `char`s or `uint8_t`s) and some of them are supposed to be 0?
+                    - in fact, it could be any element whose first byte is supposed to be 0
+                        - the `uint8_t` tested at that byte will be 0
+                    - we won't know if 0 means "nothing here" or "valid element here with the value 0"!
+                - we have to go purely on our metadata (element count, capacity, contiguity, etc.)
+                ! BUT ACTUALLY, this should still be done for security
+                    - callers reasonably expect removed data to be "gone"
+                    - callers can also read any data they want (they can just cast the `void*` they get to something they can do arithmetic with, do arithmetic, and read regions of the block they didn't receive access to with `get()`
+                    - zeroing out old blocks can prevent such access of (potentially sensitive) data
+    [x] append method returns `bool`
+    [x] use PREDICATES instead of items + comparators!
+        - like https://stackoverflow.com/questions/21204676/modern-way-to-filter-stl-container/34246828#34246828
+        - see `predicate.c` example in C sandbox
+        [x] actually, methods that take items + comparators should really have two forms:
+            - a form that takes an item (and its size) and does pointer address or bytewise comparison (no comparator)
+                - this form should likely do a comparison of pointer address as a first sweep, and only do a bytewise comparison sweep afterwards
+                - calculations suggest that, while this imposes some (in the limit) minor overhead in cases where the pointer is to something outside the vector, this is a massive optimization in cases where the pointer is to something in the vector
+                    Pointer comparison costs 8.
+                    Element comparison costs 1355.
+                    The target we're searching for is `^`.
+
+                    [^][ ][ ][ ][ ][ ][ ][ ][ ]
+                     0  1  2  3  4  5  6  7  8
+
+                        Combined scan
+                            Outer pointer
+                                8 + 1355 = 1363 🥉
+                            Inner pointer
+                                8 🥈
+
+                        Separate scan
+                            Outer pointer
+                                (8 * 9) + 1355 = 1427
+                            Inner pointer
+                                8 🥇
+
+                    [ ][ ][ ][ ][^][ ][ ][ ][ ]
+                     0  1  2  3  4  5  6  7  8
+
+                        Combined scan
+                            Outer pointer
+                                (8 + 1355) * 5 = 6815 🥉
+                            Inner pointer
+                                (8 + 1355) * 4 + 8 = 5460 🥈
+
+                        Separate scan
+                            Outer pointer
+                                (8 * 9) + (1355 * 5) = 6847
+                            Inner pointer
+                                8 * 5 = 40 🥇
+
+                    [ ][ ][ ][ ][ ][ ][ ][ ][^]
+                     0  1  2  3  4  5  6  7  8
+
+                        Combined scan
+                            Outer pointer
+                                (8 + 1355) * 9 = 12267 🥉
+                            Inner pointer
+                                (8 + 1355) * 8 + 8 = 10912 🥈
+
+                        Separate scan
+                            Outer pointer
+                                (8 * 9) + (1355 * 9) = 12267
+                            Inner pointer
+                                (8 * 9) = 72 🥇
+
+            - a form that just takes a predicate
+            [x] `Vec_where()`
+            [x] `Vec_has()`
+                - arguably, this one shouldn't bother with the pointer address sweep...
+            [x] `Vec_remove()`
+                - we also want a form of this that takes an index
+    [x] "remove" method should return something useful
+        [x] remove method returns "index of the (potentially imaginary) element after the element that was just removed"
+            - this faciliates iterate-and-remove code like:
+                [a][X][b][c][X][X][ ] v
+                 0  1  2  3  4  5  6
+
+                ```
+                // Buggy code to remove all `X` from the vector!
+                // The "iterator", `i`, will be invalidated by left shifts after each removal!
+                for (int i = 0; i < v.len(); ++i)
+                {
+                    Thing t = v[i];
+
+                    if (t.letter = X)
+                    {
+                        v.remove(i);
+                    }
+                }
+                ```
+
+                i = 4
+                [a][b][c][X][ ][ ][ ] v
+                 0  1  2  3  4  5  6
+
+                one `X` left over due to left shift after each remove!
+
+                ```
+                // Correct code to remove all `X` from vector
+                // This emulates using an iterator in C++.
+                int i = 0;
+
+                while (i != v.end()) // This should probably be count or capacity
+                {
+                    Thing t = v[i];
+
+                    if (t.letter == X)
+                    {
+                        // `i` is set to "index of the element after the one that was removed"
+                        // https://stackoverflow.com/a/3901380
+                        i = v.remove(i);
+                        // What does this return when there is no next element?
+                        // Probs `end()`! From https://en.cppreference.com/w/cpp/container/vector/erase:
+                        // If `i` refers to the last element, then the `end()` iterator is returned.
+                        // If `last == end()` prior to removal, then the updated `end()` iterator is returned.
+                        // If `[first, last)` is an empty range, then `last` is returned.
+                    }
+                    else
+                    {
+                        ++i;
+                    }
+                }
+
+
+
+                Thing toRemove;
+
+                while (i != v.end()) // This should probably be count or capacity
+                {
+                    Thing t = v[i];
+
+                    if (t == toRemove)
+                    {
+                        i = v.remove(toRemove);
+                    }
+                    else
+                    {
+                        ++i;
+                    }
+                }
+                ```
+
+                i = 3
+                end() = 3
+                [a][b][c][ ][ ][ ][ ] v
+                 0  1  2  3  4  5  6
+            [x] return element after the one that was removed (non-end case)
+            [x] return `Vec_end(v)` if we removed the last element
+            [x] replace instances of `v->data_count` with `Vec_end(v)` where `v->data_count` is being used as "where do the elements end"
+                - this would make a later potential refactor to a non-contiguous implementation easier
+        [x] we should have an `end()` that returns "index of the hypothetical element following the last element in the vector"
+            - https://en.cppreference.com/w/cpp/container/vector/erase
+            - https://en.cppreference.com/w/cpp/container/vector/end
+    [x] I've changed my mind again... remove `Vec_end()`; just use `v->data_count`
+        - it, and "capacity", is more explicit on sight than "end"
+        - it's synonymous with "end", and we shouldn't be adding awkwardness for the sake of hypothetical refactors to alternate non-contiguous implementations...
+    [x] rename `Vec_size()` to `Vec_count()`
+    [x] "remove all" methods
+        - these should return the number of erased elements
+            - https://en.cppreference.com/w/cpp/container/vector/erase2
+        [x] have a "remove all" that takes an item (and its size for checking)
+        [x] have a "remove all" that takes a predicate
+    [x] the "equal" and "where" methods iterate over `v->bytes_allocated`, but should iterate up to `v->data_count`
+        🚨 THIS IS A MATTER OF CORRECTNESS, not just efficiency!
+            - we don't manage the "empty" memory, so it's garbage
+            - that means a full scan of the empty memory is not only unnecessary; it can report false differences!
+        [y] have an "internal unit" `count * data_type_size` variable similar to `bytes_allocated`?
+            - thought about `count_internal` and naming the existing ones `count_external`
+            - but let's just go with `capacity_bytes` and `count_bytes`
+            [x] rename `data_count` to `count`
+            [x] rename `bytes_allocated` to `capacity_bytes`
+                - we actually don't seem to need `capacity_bytes` in this implementation so far...
+                - but let's keep it; it *FEELS* like it's something we should have... D:
+            [x] add `count_bytes`
+            [x] rename `data_type_size` to `element_size`
+        ```
+        element_size = 2
+
+        // external-indexed values
+        capacity = 5
+        count = 3
+
+        // internal-indexed values
+        capacity_bytes = capacity * data_type_size = 5 * 2 = 10
+        count_bytes = count * data_type_size = 3 * 2 = 6
+
+        [a][a][b][b][x][x][ ][ ][ ][ ]
+         0  1  2  3  4  5  6  7  8  9  internal
+         0     1     2     3     4     external
+        ```
+        [x] make "equal" and "where" methods iterate on `count_bytes` instead of `capacity_bytes`
+    [x] in "remove all" methods, get rid of `Vec_get()`s; access vector data directly
+        - this requires incrementing `i` as an internal index
+    [x] remove `Vec_` prefix from internal functions
+    [x] change `convert_index()` to not require a vector pointer; all it needs is an element size
+    [x] make params `void const*` where possible (just to signal intent)
+    [-] make `Vec_reserve()`
+        [n] since we already have a publicly-facing `Vec_resize()` function, do we even need this?
+            - I don't think so...
+            [x] however, we should let `Vec_resize()` accept smaller-than-current capacities and truncate elements
+                - this serves some use case out there, which is why `std::vector::resize()` does it
+                    - https://en.cppreference.com/w/cpp/container/vector/resize
+                - meanwhile, the greater-than-current capacity case is essentially the same thing as "reserve" for us
+                    - for `std::vector::resize()`, the greater-than-current capacity case is not the same as using `std::vector::reserve()`
+                        - `std::vector::reserve()` also default-constructs elements and its `size()` (our `count`) grows
+                    - we can't default construct elements since we have no type info other than size...
+                    - all we do is allocate more memory, modifying only `capacity`, which is what `std::vector::reserve()` does
+    [x] I can't take it anymore; undo yoda conditionals (change instances of `NULL == ptr` to `ptr == NULL`)
+        - I thought about cutting the knot and just doing `if (ptr)`, but... it seems like C (and C++) are like absurdists tests of your conviction... and since the astronomically small possibility of running your code on an implementation that defines `NULL` to be non-zero, and since it's nice to be explicit, I'm deciding to keep `== NULL`...
+    [x] are pointers ever compared for equality (i.e., address comparison)?
+        👾 if pointers ARE ever compared like that, that's MAYBE UB! maybe. or maybe just IB. or UsB. but, to be safe, let's not do it...
+    [x] in any code that `memset()`s, make a note about C23's new `memset_explicit()`
+        - search for it in here: https://queue.acm.org/detail.cfm?id=3588242
+        - `memset_s()` is also a "safe for sensitive data", optimization-proof version but for C11, but it's Windows only...
+    [x] do we use or allow reallocation to 0 via `realloc(p, 0)`? if so, that's UB in C23
+        - search for it in here: https://queue.acm.org/detail.cfm?id=3588242
+    [x] at the top of the header, put some of the same kinds of notes as found here: https://en.cppreference.com/w/cpp/container/vector
+    [x] do we need to make sort? would it be anything more than a wrapper around `qsort()`?
+        - caller could use: `qsort(Vec_get(v, 0), Vec_count(v), Vec_element_size(v), comparator)`
+        - but it'd be nice and easy to provide a wrapper function, so let's do so
+    [x] standardize "this fails" documentation
+        [x] header
+        [x] imp 👿
+    [n] remove `v->data == NULL` from checks?
+        - it's coupled with `v == NULL`, and `data` should never be null if the vector isn't...
+        - we access `data`, though, so it's guarding against UB...
+        - maybe take it out but add it as an assert?
+    [x] keep the `v->data == NULL` checks but we should ADD asserts for failure cases
+        - and probably mention them in the docs
+            - https://ptolemy.berkeley.edu/~johnr/tutorials/assertions.html
+            - https://stackoverflow.com/questions/71195585/in-a-library-should-i-check-if-pointers-are-valid#comment134109573_71195681
+        [y] do "serious" libraries, like the C or C++ standard libs, use asserts? that'd be encouraging
+            - a `grep -ri "assert" *` in the glibc 2.37 dir reveals... a LOT of `assert()` calls
+    [x] make "remove all" more efficient by adding bespoke shifting code
+        - this only seems to save time in an extreme case: when removing 5 elements from a 5-element vector, instead of shifting after each removal (that's 5 total shifts), we can save shifting til the end, at which point there's no shifts!
+        - the point is basically removing shifts for elements that are going to get deleted later in the "remove all"
+        - NAH; removing all? why not just destroy the vector?
+        - WAIT! we can do it without shifting at all, similar to how it's done with the erase-remove idiom: https://en.wikipedia.org/wiki/Erase%E2%80%93remove_idiom
+            - say you're erasing elements that match `X`
+            - keep a "non-`X` elements end here" index (call it `end`) and swap non-`X` elements to that index
+            - at the end, all `X` elements will be clustered at tail
+            - remove all `X`s by cutting off the `count - end` elements!
+            ```
+            [X][X][a][X][X][X][b][X][c][X][X] before
+            [a][b][c][X][X][X][X][X][X][X][X] after
+             0  1  2  3  4  5  6  7  8  9  10
+
+            end of non-X: 3
+            swap to end! No shifts required!
+                shifts are O(n) "bubblings" of elements necessary when filling gaps
+                here, we just use O(1) swaps!
+            then cut off `count - end`, if `end > 0`, trailing elements
+                should also keep a "saw at least one X" bool
+                `end = 0` either when we have "all X" or "no X"
+                that bool will tell us which scenario it is
+                "all X"
+                    remove all (also `count - end`
+                "no X"
+                    remove none
+
+
+            [a][b][X][c][X] before
+            [a][b][c][X][X] after
+             0  1  2  3  4
+
+            end of non-X: 3
+            swaps: 1
+                start at a, which is already at default end of 0
+                increment end to 1 (since the next non-X will be at 1)
+                move to next element, b
+                b is already at 1
+                und so weiter
+
+
+            [X][X][a][b][c] before
+            [a][b][c][X][X] after
+             0  1  2  3  4
+
+            end of non-X: 3
+            swaps: 3
+
+            best case scenario:  [a][b][c][X][X]
+                swaps: 0
+            worst case scenario: [X][X][a][b][c]
+                swaps: 3
+
+                worst-case `k` swaps where `k` is the elements left after removal of all X
+
+            overall complexity is O(n).
+            this is the same complexity class as regular remove-and-shift, which is is O(rn) where `r` is the number of elements removed (since there are `r` linear sweeps through the array). but, as with the erase remove idiom, this is only does 1 sweep of the array, making it more efficient than regular remove-and-shift when `r > 1`.
+            ```
+            [x] implement swap logic
+                [-] in "remove all" function that takes item pointer
+                [-] in "remove all" function that takes a predicate
+                ! WAIT; implementing this swap algorithm really stress tests the code repetition we have...
+                    - the functions that take an item pointer, seeing if any elements match the item, do the swap stuff
+                    - the "sibling" functions that take a predicate, seeing if any elements satisfy the predicate, ALSO would do the swap stuff
+                    - that's 2 instances of swap stuff logic per pair of such functions!
+                    !! "does this element match this item" can be a predicate
+                    - however, that'd be a binary predicate: `predicate(element, item)`
+                    - we need the predicates to be unary since that's what the functions that take predicates expect
+                    - C doesn't have partial application or closures
+                    !! I guess let's just stow the "item" into a static global var which the "does this element match this item" predicate can access and do the comparison while remaining unary
+                        - beats code repetition...
+                        !!! WAIT, we ALSO need the size...
+                        [n] should we stow that as a global var too?
+                        [y] or should we add a size param to the unary predicates, making them binary?
+                            - this would allow callers to avoid the same problem of having to use a global var for the size...
+                            - ...although callers, unlike us, could cast to the type they expect, which would implicitly provide the size
+                                - but being explicit about the size seems better
+                                - if the caller ever changes the type used for the vector, predicates which now cast to the wrong type would still appear to work, even though they're no longer reading all of an element's bytes (or reading PAST the element's bytes!)
+                                - if the size were explicitly passed as a parameter to the predicate, they could, in the predicate, write `assert(sizeof(expected_type) == size_passed_in)` and detect such a forgot-to-refactor error
+                            - this seems like the best way to go
+                            [x] implement `memcmp_predicate()`
+                            [x] apply size param to predicates
+                            [x] cease using the term "unary" throughout since they're unary no longer
+                            [x] make functions that take item pointers re-use predicate functions
+                [x] implement swap logic in "remove all" predicate form
+                [x] make "remove all" item form re-use predicate form
+    [x] add random insertion
+        - do not allow insertion past the `count`
+            - `std::vector` doesn't either since it never lets you insert with indices -- only iterators ; )
+                - https://en.cppreference.com/w/cpp/container/vector/insert
+        [x] mention in the header top doc that "Insertion and removal of elements NOT at the end is linear in distance to the end of the vector" and append "(assuming `realloc()` is also O(n))", since that's used when resizing during insertion if necessary
+    ℹ️ Great feedback to another C vector implementation!
+        - https://codereview.stackexchange.com/a/253253
+        [x] align capacity with CPU words
+            - instead of just using whatever starting capacity the caller requests, use the multiple of `sizeof(void*) * 8` greater-or-equal to the requested size
+            - Then when the user requests a resize to 20 bytes, you simply mark 20 out of your 32 allocated bytes as used.
+            - Only when they go beyond the allocated size do you call malloc. But this time you allocate a total of `sizeof(void*) * 8 * 2 = 64` bytes (on 32-bit machines). Next time 128 bytes, and so on. This is to reduce the amount of allocation calls.
+            - And there is usually no need to shrink the allocated space, ever.
+            [x] make `capacity` a private, internal variable
+                - both Lundin and chux advocate this in that thread
+                - it makes sense
+                    - it follows from word alignment that capacity will no longer be what the caller expects it to be
+                    - alignment decreases costly allocations and proabably helps cache use at the cost of caller control over memory usage
+                    - in the vast majority of cases, performance outweighs memory usage as a concern
+                    - in the small minority of cases where that's not true, and you're in some exotically memory-constrained environment, you probably wouldn't use a generic vector anyway
+                [x] get rid of capacity getters
+                [n] can we keep `Vec_resize()` as an honest interface to vectors' memory usage, with exact new capacity resizing?
+                    - if the caller uses this, they've expressed concern over memory usage
+                    - they're free to ruin their performance and cache usage, but it's the best of both worlds
+                    - in this case, the next aligned size can be found from the current size `n` by calculating `log_2(n)` and rounding up to the next integer
+                    [y] if NO, do we remove its shrinking capability?
+                    [-] if YES, however, on the next AUTOMATIC resize, the vector should word-realign
+                        [-] so take the alignment math in initializer and move it out to a function
+                        [-] call the new function in initializer
+                        [-] call the new function in the capacity exhaustion handler
+                    [x] make `Vec_resize()` private
+                [x] whatever we decided to do with `Vec_resize()`, make sure header top docs reflect that
+                [x] in cases where `capacity` was returned as a failure value, use `count` now instead
+                [x] in cases where `capacity` was the bound used for checking input range, use `count` now instead
+            [x] apply alignment math
+                [x] in initialization
+                    [x] fold `Vec_init()` into `Vec_new()` since the internal allocation renders that pattern a little moot
+                    [y] can we keep capacity "hint" parameter of `Vec_new()`?
+                        - I'm thinking nah...
+                        ! BUT WAIT... `capacity_bytes` is the thing to word-align, not `capacity`
+                            [y] maybe then we can keep the `capacity` argument in `Vec_new()`?
+                                [y] should it merely be a HINT, not an exact number? "The vector will hold AT LEAST this many elements", not "this exact number of elements"?
+                                    - making it a hint allows us to waste less bytes
+                                    - say the caller initializes a vector with capacity `5`, element size `13`
+                                    - `13 * 5 = 65` total bytes to allocate
+                                    - word-aligned, that becomes 128 bytes
+                                    - if the capacity `5` is treated as exact, that's `128 - 65 = 63` wasted bytes
+                                    - if the capacity `5` is treated as a hint, we can actually bump it up to `128 / 13 ~= 9`
+                                        - in this case, we'll only waste `128 - (13 * 9) = 11` bytes
+                                        - and we're wasting them because we literally can't put another 13-byte element in the remaining 11 bytes, not because we're just trying to keep our promise of respecting the caller's default capacity
+                            [n] or maybe we can deduce element capacity FROM the word-aligned `capacity_bytes`?
+                        [x] if YES, rename them with `_hint` or `least` and mention that they're guidelines in the docs
+                [x] in capacity exhaustion handler
+                [n] in resize?
+                    - no; we're keeping resize exact, and it only merely takes aligned sizes
+                [x] anywhere else?
+                    - probably search for "capacity"
+        [x] implement an `apply()` function
+            - essentially an in-place `map()`; see thread
+    ℹ️ also an allegedly bad array
+        - https://gist.github.com/nicebyte/86bd1f119d3ff5c8da06bc2fd59ad668
+            ```
+            #pragma once
+
+            #define DYN_ARR_OF(type) struct  { \
+            type *data; \
+            type *endptr; \
+            uint32_t capacity; \
+            }
+
+            #if !defined(__cplusplus)
+            #define decltype(x) void*
+            #endif
+
+            #define DYN_ARR_RESET(a, c) { \
+            a.data = (decltype(a.data))malloc(sizeof(a.data[0]) * c); \
+            a.endptr = a.data; \
+            a.capacity = c; \
+            }
+
+            #define DYN_ARR_RESIZE(a, s) { \
+            uint32_t size = (s); \
+            if (a.capacity < size) { \
+                a.data = (decltype(a.data))realloc(a.data, sizeof(a.data[0]) * size); \
+                a.capacity = size; \
+            } \
+            a.endptr = a.data + size; \
+            }
+
+            #define DYN_ARR_DESTROY(a) if(a.data != NULL) { \
+            free(a.data); \
+            a.data = a.endptr = NULL; \
+            }
+
+            #define DYN_ARR_APPEND(a, v) { \
+            ptrdiff_t cur_size = a.endptr - a.data; \
+            assert(cur_size >= 0);                                 \
+            if ((size_t)cur_size >= a.capacity) { \
+                a.capacity <<= 1u; \
+                decltype(a.data) tmp = (decltype(a.data)) realloc(a.data, sizeof(a.data[0]) * a.capacity); \
+                assert(tmp != NULL); \
+                a.data = tmp; \
+                a.endptr = &a.data[cur_size]; \
+            } \
+            *(a.endptr++) = v; \
+            }
+
+            #define DYN_ARR_CLEAR(a) (a.endptr = a.data)
+            #define DYN_ARR_SIZE(a) ((uint32_t)(a.endptr - a.data))
+            #define DYN_ARR_AT(a, i) (a.data[i])
+
+            #define DYN_ARR_POP(a) {\
+            assert(a.data != a.endptr); \
+            --(a.endptr); \
+            }
+
+            #define DYN_ARR_EMPTY(a) (a.endptr == a.data)
+
+            #define DYN_ARR_BACKPTR(a) (a.endptr - 1)
+
+            #define DYN_ARR_FOREACH(a, countername) \
+            for (size_t countername = 0; (countername) < DYN_ARR_SIZE(a); ++(countername))
+
+            /*
+            Example usage:
+            typedef struct point { uint32_t x, y } point;
+            void foo() {
+                DYN_ARR_OF(point) points;
+                DYN_ARR_RESET(points, 100u);
+                uint32_t npoints = 200u;
+                for (uint32_t i = 0u; i < npoints; ++i) {
+                point p = {i, i * 10u};
+                DYN_ARR_APPEND(points, p);
+                }
+                assert(DYN_ARR_SIZE(points) == 200u);
+
+                DYN_ARR_FOREACH(points, i) {
+                assert(DYN_ARR_AT(points, i).x == i);
+                assert(DYN_ARR_AT(points, i).y == i * 10u);
+                }
+                DYN_ARR_CLEAR(points);
+                assert(DYN_ARR_SIZE(points) == 0u);
+                DYN_ARR_DESTROY(points);
+            }
+            */
+            ```
+        - https://news.ycombinator.com/item?id=34974187
+            ```
+            DON'T USE THIS
+
+            As fpoling points out, capacity is a 32-bit unsigned. That can overflow. There is no safety in append: if capacity is zero no new space will be made, if capacity overflows the realloc will not have enough space -- in either case, you end up writing past the end.
+
+            Allocating a [capacity] zero array and appending to it is extremely common. That you'll write past the end in that case shows that the author has barely even used this.
+
+            The code is unacceptably bad and unsafe. I don't usually do this, but I'm going to flag this post. I encourage everybody to do the same.
+
+            Apologies to the author. Golf is fun. This is uncool.
+            ```
+        - this implementation looks like the antithesis of ours, which uses no macros and tries to be agonizingly safety-oriented
+            - and that doesn't mean our implementation is objectively better:
+                - the safety-agony makes implementing functionality much slower
+                - the checks erode performance at least a little
+                - past a certain point, it's futile (e.g., "type checking" is purely size-based)
+                - it seems far less "C-like", spiritually : P
+    [/] THE TESTING PHASE
+        [x] achieve compilation
+            [x] UH OH: function overloading is not supported in C... at least without C11's `_Generic`
+                [n] use C11's `_Generic`?
+                    - https://stackoverflow.com/a/25026358/9959012
+                [n] use varargs, like `printf()` does?
+                [y] rename overloads?
+                    - the predicate forms could have "_if" appended to their name!
+                [n] delete overloads?
+        [x] remove non-contiguous tests
+        [x] make a whole 'nother executable target called `test.exe` from a test TU?
+            - don't need a header, just its own `main()` which runs unit tests
+        [x] add post-refactor tests
+            [x] test each function
+                - accepting the wisdom that "private functionality shouldn't be tested", we won't write outward tests for word alignment
+                    [x] ...but we can still check if that's working as desired with temporary debug print statements
+                [y] WAIT... should we test precondition violations that `Vec.c` code asserts on?
+                    [x] if so, how?
+                        - compile TWO objects from `Vec.c`:
+                            1. `Vec.o`, with asserts enabled
+                            2. `Vec_test.o`, with asserts disabled
+                        - use the second one in the unit test executable!
+                        - this way, only the unit tests' asserts will be enabled, allowing us to assert that normally-assert-triggering cases are handled gracefully by `Vec.c` code
+                ! noticed that `-fsanitize=address` breaks Valgrind
+                    - removed `-fsanitize=address` from compiler flags
+                ! noticed that `-fsanitize=undefined` causes surprising memory allocations visible in Valgrind
+                    - `test.exe` should have 2 allocations, since we instantiate a vector (which incurs one allocation for itself and then one for its internal data)
+                    - `example.exe` should have 0 allocations; all we do is print "Example!" and exit...
+                    !! wait, even without it, and without calling any vector code, there's anomalous allocations...
+                        - with it:
+                            - valgrind ./example.exe
+                                ```
+                                2 allocs, 2 frees, 74,752 bytes allocated
+                                ```
+                            - valgrind ./test.exe
+                                ```
+                                4 allocs, 4 frees, 74,864 bytes allocated
+                                ```
+                            !!! a difference of 112 bytes from example.exe!
+                            ℹ️ 112 bytes is exactly the size of a vector
+                                - 48 for the outer struct
+                                - 64 for the inner data when 20 bytes requested
+                            !!! so it seems like the 2 anomalous allocations of 74,752 bytes still occur here
+                                - I guess it makes sense that this is `-fsanitize=undefined` instrumentation that detects errors at runtime
+                        - without it:
+                            - valgrind ./example.exe
+                                ```
+                                1 allocs, 1 frees, 1,024 bytes allocated
+                                ```
+                            - valgrind ./test.exe
+                                ```
+                                3 allocs, 3 frees, 1,136 bytes allocated
+                                ```
+                            !!! again a difference of 112 bytes from example.exe, accounting for the vector in test.exe
+                            [x] but what is the allocation of the 1024 bytes...?
+                                - it's `printf()`, allocating memory for buffered I/O!
+                                - https://stackoverflow.com/q/45109944/9959012
+                                - prepending `setbuf(stdout, NULL)` to the `printf()` call shows:
+                                    ```
+                                    total heap usage: 0 allocs, 0 frees, 0 bytes allocated
+                                    ```
+                [x] Vec_new()
+                    [x] trivial case(s)
+                    [x] zero/NULL case(s)
+                    [x] oveflowy case(s)
+                    [x] ACTUALLY, SCREW IT; EXPOSE `capacity`!
+                        - we have to; there's no other way to verify resizing on append or least sizing here
+                        [x] then test that the "least capacity" hint is working
+                            - and I mean just that the actual capacity is >= to the hint
+                            - we probably shouldn't test the actual implementation details of how large the capacity is at any given moment...
+                [x] Vec_destroy()
+                [x] Vec_where()
+                    [x] invalid
+                    [x] valid
+                [x] Vec_where_if()
+                    [x] invalid
+                    [x] valid
+                [x] Vec_has()
+                    [x] invalid
+                    [x] valid
+                [x] Vec_has_if()
+                    [x] invalid
+                    [x] valid
+                        [x] beginning
+                        [x] middle
+                        [x] end
+                        [x] nowhere
+                [x] Vec_get()
+                    [x] invalid
+                    [x] valid
+                [x] Vec_append()
+                    [x] check resizing capacity after having exposed `capacity`
+                [x] Vec_insert()
+                    [x] 🐞 it seems like the shift logic in `Vec_insert()` is corrupting the memory
+                        - used wrong variable in `to_internal_index()` call!
+                [x] Vec_remove()
+                [x] Vec_equal()
+                    [x] invalid
+                    [x] valid
+                        [y] are two empty ones equal?
+                            - yes, if they take the same element size
+                            [x] test this
+                        [y] are ones with different capacities but the same elements equal?
+                            - ignoring metadata like capacity and focusing purely on element parity is probably the right thing here
+                            [x] test this
+                [x] Vec_remove_all()
+                    [x] invalid
+                    [x] removing none
+                    [x] removing one
+                        [x] beginning
+                        [x] middle
+                        [x] end
+                    [x] removing some
+                        - beginning, middle, and end all at once
+                    [x] removing all but one
+                    [x] removing all
+                    [x] test with target pointer to an element in the vector
+                        [x] This causes `test_remove_all_partial()` to only remove 2 of the 7 `X`s! Why?!?!
+                            ! It might be because we're swapping elements, and the item pointer will then point to different bytes used by the `memcmp()` predicate
+                            [x] what if, every time we swap, we reassign the global item pointer to a swapped element's post-swap location?
+                                - the obvious hazard is that we're potentially changing the target from the one the user specified to any other one for whom the predicate is true
+                                    - actually, no, since the global item pointer only matters when using the built-in `memcmp()` predicate, in which case we're only dealing with simple types (e.g., not structs) and are using bytewise comparison
+                                    - so the global item pointer is changed to something whose bytes match the original target's... little room for grey area; we're only changing the target to byte-identical others
+                                ! this worked
+                        [x] dedicate whole tests to this for all functions that take item pointers... that's:
+                            [x] `Vec_where()`
+                            [x] `Vec_has()`
+                            [x] `Vec_append()`
+                                [x] with pointer to beginning
+                                    - note: it's inappropriate to test this with expansion since expansion invalidates outside pointers (we warn about this in the docs, making it a user error, not an implementation error)
+                                [x] with pointer to middle
+                                [x] with pointer to end
+                            [x] `Vec_insert()`
+                                [x] no expansion
+                                    [x] with pointer before insertion site
+                                        [x] head
+                                            - test_insert_inner_pointer_head_before_insertion
+                                        [x] middle
+                                            - test_insert_inner_pointer_middle_before_insertion
+                                        [x] tail
+                                            - test_insert_inner_pointer_tail_before_insertion
+                                    [x] with pointer at insertion site
+                                        ⚠️ likely to fail due to make-room shifting
+                                            [x] yep, failed
+                                            ! actually not just due to shifting, after that, the full-vector-insert-after-tail test kept failing due to the vector's data being moved to a distant memory block as a result of reallocation!
+                                        [x] head
+                                            - test_insert_inner_pointer_head_at_insertion
+                                        [x] middle
+                                            - test_insert_inner_pointer_middle_at_insertion
+                                        [x] tail
+                                            - test_insert_inner_pointer_tail_at_insertion
+                                    [x] with pointer after insertion site
+                                        [x] head
+                                            - test_insert_inner_pointer_head_after_insertion
+                                        [x] middle
+                                            - test_insert_inner_pointer_middle_after_insertion
+                                        [x] tail
+                                            - test_insert_inner_pointer_tail_after_insertion
+                                [x] expansion
+                                    [x] with pointer before insertion site
+                                        [x] head
+                                            - test_insert_full_inner_pointer_head_before_insertion
+                                        [x] middle
+                                            - test_insert_full_inner_pointer_middle_before_insertion
+                                        [x] tail
+                                            - test_insert_full_inner_pointer_tail_before_insertion
+                                    [x] with pointer at insertion site
+                                        [x] head
+                                            - test_insert_full_inner_pointer_head_at_insertion
+                                        [x] middle
+                                            - test_insert_full_inner_pointer_middle_at_insertion
+                                        [x] tail
+                                            - test_insert_full_inner_pointer_tail_at_insertion
+                                    [x] with pointer after insertion site
+                                        [x] head
+                                            - test_insert_full_inner_pointer_head_after_insertion
+                                        [x] middle
+                                            - test_insert_full_inner_pointer_middle_after_insertion
+                                        [x] tail
+                                            - test_insert_full_inner_pointer_tail_after_insertion
+                            [x] `Vec_remove_all()`
+                                [x] partial
+                                    [x] with pointer to beginning
+                                    [x] with pointer to middle
+                                    [x] with pointer to end
+                                [x] full
+                                    [x] with pointer to beginning
+                                    [x] with pointer to middle
+                                    [x] with pointer to end
+                    [x] test with target pointer to an element not in the vector
+                [x] Vec_remove_all_if()
+                    [x] invalid
+                    [x] none
+                    [x] one
+                    [x] some
+                    [x] all
+                [x] Vec_qsort()
+                [x] Vec_apply()
+            [x] test code snippets in documentation
+                [x] easy predicates, like for `Vec_where_if()`
+                [x] "add one" predicate in `Vec_apply()` docs
+                [x] "store max" predicate in `Vec_apply()` docs
+                    [y] also, is it possible for a function like a predicate to even refer to the caller environment's stuff when run in one of the vector's functions?
+                        - yeah! function pointers in C are like global closures that capture their translation unit's global scope
+                [n] do we want to -- we might actually NEED to -- use state pointers in our predicates, for caller communication?
+                    - say we want to find a needle in a haystack, and all but one of a vector's elements are hay
+                    - without a state pointer, if the characteristic that identifies a needle changes, the caller would need to write a separate predicate for every characteristic
+                    - with a state pointer, it can just dynamically pass in the characteristic to the predicate
+            [x] test cases of passing an empty vector to functions
+                [n] should we make non-emptiness a precondition for "remove all", "apply", etc.? it feels like we should...
+        [ ] test with max optimizations
+            - compiled in debug mode, `file tests.exe`:
+                ```
+                tests.exe: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, BuildID[sha1]=021c2bcd4a6aa6fa64a059c69e2dc8f094ae16d6, for GNU/Linux 4.4.0, with debug_info, not stripped
+                ```
+        [/] valgrind test executable
+            [/] compiled in debug mode
+                [/] inserting a struct yields a Valgrind error in `test_equal_modified()`
+                    - Valgrind output:
+                        ```
+                        ==126845== Conditional jump or move depends on uninitialised value(s)
+                        ==126845==    at 0x484B70E: bcmp (vg_replace_strmem.c:1221)
+                        ==126845==    by 0x12563C: memcmp_predicate (Vec.c:510)
+                        ==126845==    by 0x12583B: Vec_where_if (Vec.c:540)
+                        ==126845==    by 0x125AF8: Vec_where (Vec.c:578)
+                        ==126845==    by 0x125C82: Vec_has (Vec.c:598)
+                        ==126845==    by 0x126C11: Vec_insert (Vec.c:897)
+                        ==126845==    by 0x11B44D: test_equal_modified (tests.c:3439)
+                        ==126845==    by 0x1244F7: main (tests.c:5374)
+                        ==126845==  Uninitialised value was created by a stack allocation
+                        ==126845==    at 0x11B0CA: test_equal_modified (tests.c:3384)
+                        ```
+                    - This is due to `Vec_insert()`'s "is this element already in the vector" check, which uses bytewise comparison by running `memcmp_predicate()`. Structs contain random, uninitialized padding bytes, and Valgrind's noticing that we're using those bytes in `memcmp_predicate()`.
+                    - The offending code:
+                        ```
+                        size_t const index = 0;
+                        Fish const inserted =
+                        {
+                            .color = RED,
+                            .size = 2
+                        };
+                        // debug
+                        memset(&inserted, 2, sizeof(Fish)); // Fixes Valgrind error
+                        // debug
+
+                        assert(true == Vec_insert(v1, index, &inserted, sizeof(inserted)));
+                        ```
+                    - The `memset()` fixes it by paving over all of the struct's bytes with initialized values.
+                    [/] how should we fix this?
+                        - Generally, bytewise comparison for structs should be avoided due to random padding bytes.
+                        - Here, though, `Vec_insert()`'s check is just trying to see if the pointer is to a struct literally in the vector. When the answer is yes, it's always going to be comparing the struct's random bytes against themselves, which will necessarily work. In all other cases, the check will return false, as we'd expect. (Unless there's an identical copy of that struct with those random padding bytes in the vecotr, in which case that copy will be harmlessly selected for the target instead. It's identical, so no harm no foul.)
+                            - Unless the compiler changes those padding bytes at random for some reason...
+                            [x] We should really test insertion with structs; we only did it with scalars so far.
+                        [ ] Should we consider the error benign (since it seems to be) and just call the Valgrind error out in a warning in `Vec_insert()`'s docs and maybe `memcmp_predicate()`'s `memcmp()` line and the offending code in `test_equal_modified()`?
+                        [ ] Should we just have `Vec_insert()` take items as values instead of pointers? It would elide the check to begin with and fix Valgrind "uninitialised value(s)" errors whenever using structs with `Vec_insert()`...
+            [ ] compiled with max optimizations
+    [ ] remove any debug statements from code
+    [ ] a possible limtation of the encapsulated struct design is that users can't embed them in their own structs; is that true?
+        - https://news.ycombinator.com/item?id=35594787
+        - try it in `main()` after testing verifies things work correctly
+    [ ] turns out we might be using what's called "arenas" and "bump allocation"! look into these:
+        - https://news.ycombinator.com/item?id=36427264
+        - https://rust-hosted-langs.github.io/book/chapter-simple-bump.html
+        - https://stackoverflow.com/questions/12825148/what-is-the-meaning-of-the-term-arena-in-relation-to-memory#12825221
+    [y] will we be offering the makefile in the repo?
+        - the only reason it's there is to easily build and run the code with test and example executables
+        - not offering it in the repo provides an obstacle to running and testing the code...
+        - what happens if someone's makefile ends up caling our makefile?
+        - what if they incorporate the module into their project, do a release build, and call our makefile with theirs, while ours is not prepared for release mode?
+            - I guess we should make our makefile offer debug and release builds...
+            [ ] make makefile be able to make both debug and release builds
+                - https://stackoverflow.com/q/792217
+                - https://stackoverflow.com/q/1079832
+                [ ] leave `-fsanitize=undefined` out of release builds
+        [ ] Since this is one of hypothetically several standalone modules, the toplevel dir of the repo should have a "root Makefile" capable of building every subdir's Makefile
+            - https://stackoverflow.com/a/1139313
+    [ ] run docs through spellchecker
+    [ ] benchmark it against a C++ `std::vector`!
+        - if it's faster, THAS AWESOOOOMEE
+        - if it's slower, hey -- we now have a vector in C... it's like having a toilet when camping... or something
+        [ ] also compare after adding `inline` to `convert_index()`
+            - it seems like a good candidate for it
+            - but I don't have the guts to throw it around without benchmark evidence
+    [ ] do demo in `example.c`
+    [ ] have nice run instructions somewhere like https://github.com/clementine-player/Clementine#compiling-from-source
