@@ -387,8 +387,9 @@ bool Vec_append(Vec* v,
  * data block may reside in a totally different region of memory than the one
  * still being pointed to by outside pointers!
  *
- * This fails, and doesn't modify the vector (or, if assertions are enabled,
- * causes an assert crash), if any of the following are true:
+ * This fails, leaving the vector unmodified and returning false (or, if
+ * assertions are enabled, causes an assert crash), if any of the following are
+ * true:
  *     - The given index is out of the bound `[0, n]` where `n` is the number of
  *       elements in the vector
  *     - The given item size does not match the vector's expected element size
@@ -398,7 +399,7 @@ bool Vec_append(Vec* v,
  *     - The given vector or item pointers are null
  *
  * @param v The vector to insert to
- * @param i The index to insert to
+ * @param i The index to insert at
  * @param item The item to insert
  * @param item_size The item's size in bytes (as a size-based "type check" to
  * make sure the item looks like it's the same type as the vector's elements)

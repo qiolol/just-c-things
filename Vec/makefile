@@ -1,6 +1,8 @@
 CC = gcc
 CFLAGS = -std=c17 \
-	 -g3 -Wall \
+	 -Og \
+	 -g3 \
+	 -Wall \
 	 -Wextra \
 	 -Werror \
 	 -pedantic \

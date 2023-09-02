@@ -569,7 +569,7 @@
                 - the checks erode performance at least a little
                 - past a certain point, it's futile (e.g., "type checking" is purely size-based)
                 - it seems far less "C-like", spiritually : P
-    [/] THE TESTING PHASE
+    [x] THE TESTING PHASE
         [x] achieve compilation
             [x] UH OH: function overloading is not supported in C... at least without C11's `_Generic`
                 [n] use C11's `_Generic`?
@@ -779,14 +779,16 @@
                     - with a state pointer, it can just dynamically pass in the characteristic to the predicate
             [x] test cases of passing an empty vector to functions
                 [n] should we make non-emptiness a precondition for "remove all", "apply", etc.? it feels like we should...
-        [ ] test with max optimizations
-            - compiled in debug mode, `file tests.exe`:
-                ```
-                tests.exe: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, BuildID[sha1]=021c2bcd4a6aa6fa64a059c69e2dc8f094ae16d6, for GNU/Linux 4.4.0, with debug_info, not stripped
-                ```
-        [/] valgrind test executable
-            [/] compiled in debug mode
-                [/] inserting a struct yields a Valgrind error in `test_equal_modified()`
+        [y] test with max optimizations
+            [y] `-O1` pass?
+            [y] `-O2` pass?
+            [y] `-O3` pass?
+            [y] `-Ofast` pass?
+            [y] `-Os` pass?
+            [y] `-Oz` pass?
+        [x] valgrind test executable
+            [x] compiled in debug mode
+                [x] inserting a struct yields a Valgrind error in `test_equal_modified()`
                     - Valgrind output:
                         ```
                         ==126845== Conditional jump or move depends on uninitialised value(s)
@@ -817,16 +819,25 @@
                         assert(true == Vec_insert(v1, index, &inserted, sizeof(inserted)));
                         ```
                     - The `memset()` fixes it by paving over all of the struct's bytes with initialized values.
-                    [/] how should we fix this?
+                    [x] how should we fix this?
                         - Generally, bytewise comparison for structs should be avoided due to random padding bytes.
                         - Here, though, `Vec_insert()`'s check is just trying to see if the pointer is to a struct literally in the vector. When the answer is yes, it's always going to be comparing the struct's random bytes against themselves, which will necessarily work. In all other cases, the check will return false, as we'd expect. (Unless there's an identical copy of that struct with those random padding bytes in the vecotr, in which case that copy will be harmlessly selected for the target instead. It's identical, so no harm no foul.)
                             - Unless the compiler changes those padding bytes at random for some reason...
                             [x] We should really test insertion with structs; we only did it with scalars so far.
-                        [ ] Should we consider the error benign (since it seems to be) and just call the Valgrind error out in a warning in `Vec_insert()`'s docs and maybe `memcmp_predicate()`'s `memcmp()` line and the offending code in `test_equal_modified()`?
-                        [ ] Should we just have `Vec_insert()` take items as values instead of pointers? It would elide the check to begin with and fix Valgrind "uninitialised value(s)" errors whenever using structs with `Vec_insert()`...
-            [ ] compiled with max optimizations
-    [ ] remove any debug statements from code
-    [ ] a possible limtation of the encapsulated struct design is that users can't embed them in their own structs; is that true?
+                        [n] Should we consider the error benign (since it seems to be) and just call the Valgrind error out in a warning in `Vec_insert()`'s docs and maybe `memcmp_predicate()`'s `memcmp()` line and the offending code in `test_equal_modified()`?
+                        [y] Should we change `Vec_insert()` insert to get rid of the Valgrind error?
+                            [x] If there's room for one more element, immediately write the item there. Then, using swaps, "bubble" the item leftwards to the insertion site.
+                                - In this case, we can no longer `memmove()` all the elements at once as a block; instead, we're swapping each element all the way to the insertion site.
+                                - But, since we no longer have to perform a linear search over the vector, I guess it's net neutral performance impact.
+                            [x] If insertion is happening to a full vector, so there ISN'T room for one more element, resort to a dynalloc'd copy of the item...
+                                - Rationale: when the item pointer is pointing to an item already in the vector, expansion of the vector may cause the vector's data to be in a totally different block of memory, invalidating the item pointer. We can't use the item pointer after the expansion since we've potentially lost the item by then.
+                                - ...So dynalloc a copy of the item before expanding the vector.
+                                - In this case, we can preserve `memmove()`ing all the elements at once.
+                                - But the dynalloc is very slow.
+                                - As consolation, this case'll be hit rarely -- only when inserting into a full vector.
+            [x] compiled with max optimizations
+    [x] remove any debug statements from code
+    [/] a possible limtation of the encapsulated struct design is that users can't embed them in their own structs; is that true?
         - https://news.ycombinator.com/item?id=35594787
         - try it in `main()` after testing verifies things work correctly
     [ ] turns out we might be using what's called "arenas" and "bump allocation"! look into these:
