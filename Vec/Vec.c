@@ -834,6 +834,208 @@ bool Vec_append(Vec* v, void const* item, size_t const item_size)
     return true;
 }
 
+/**
+ * @brief Swaps the elements at the given internal indices in the given vector
+ *
+ * WARNING: This may invalidate stored pointers or indices! After a vector's
+ * elements are swapped, pointers or indices that used to correspond to those
+ * elements in the vector will now correspond to the swapped element!
+ *
+ * This fails, and doesn't modify the vector (or, if assertions are enabled,
+ * causes an assert crash), if any of the following are true:
+ *     - The indices are the same
+ *     - Either index is not aligned on an element boundary (and thus invalid
+ *       since it's not pointing to the first byte of an element)
+ *     - Either index is out of bounds of the vector's elements
+ *     - The vector pointer is null
+ *
+ * @param v The vector to swap the elements of
+ * @param a The internal index of an element
+ * @param b The internal index of another element
+ * @return Whether the elements were swapped
+ */
+static bool swap(Vec* v, size_t const a, size_t const b)
+{
+    assert(v != NULL);
+    assert(v->data != NULL);
+    if (v == NULL ||
+        v->data == NULL)
+    {
+
+        return false;
+    }
+
+    assert(a != b);
+    assert(a % v->element_size == 0); // Aligned on element boundary
+    assert(b % v->element_size == 0);
+    assert(a < v->count_bytes); // Within element bounds
+    assert(b < v->count_bytes);
+    if (a == b ||
+        a % v->element_size != 0 ||
+        b % v->element_size != 0 ||
+        a >= v->count_bytes ||
+        b >= v->count_bytes)
+    {
+        return false;
+    }
+
+    // Iterate through the elements' bytes and swap one byte pair at a time.
+    for (size_t i = 0; i < v->element_size; ++i)
+    {
+        uint8_t* a_byte = (v->data + a + i);
+        uint8_t* b_byte = (v->data + b + i);
+
+        *a_byte ^= *b_byte;
+        *b_byte ^= *a_byte;
+        *a_byte ^= *b_byte;
+    }
+
+    return true;
+}
+
+/**
+ * @brief Inserts the given item in the given vector (which has free space for
+ * at least one additional element)
+ *
+ * The index at which to insert is intuited from the given number of elements to
+ * be shifted.
+ *
+ * WARNING: This may invalidate stored pointers or indices! To make room for the
+ * insertion (if it's anywhere else than the end of the elements), the vector's
+ * elements are automatically shifted to make room. As a result, pre-existing
+ * pointers or indices may no longer correspond to the elements they did before
+ * insertion!
+ *
+ * @param v The vector to insert to
+ * @param elements_to_shift How many elements need to be displaced for insertion
+ * @param item The item to insert
+ */
+static bool insert_when_room(Vec* v,
+                             size_t elements_to_shift,
+                             void const* item)
+{
+    /*
+     * Write the item to the first free internal index of the vector (i.e., at
+     * the end of the elements, immediately after the final element).
+     */
+    memcpy(v->data + v->count_bytes,
+           item,
+           v->element_size);
+
+    size_t inserted_index_i = v->count_bytes;
+
+    /*
+     * Update metadata here so the swap function doesn't think we're swapping
+     * with empty space past the final element.
+     */
+    v->count += 1;
+    v->count_bytes += v->element_size;
+
+    while (elements_to_shift > 0)
+    {
+        swap(v,
+             inserted_index_i,
+             inserted_index_i - v->element_size);
+
+        elements_to_shift--;
+        inserted_index_i -= v->element_size;
+    }
+
+    return true;
+}
+
+/**
+ * @brief Inserts the given item at the given internal index of the given vector
+ * (which has no free space left and must be expanded first)
+ *
+ * WARNING: This may invalidate stored pointers or indices! To make room for the
+ * insertion (if it's anywhere else than the end of the elements), the vector's
+ * elements are automatically shifted to make room. As a result, pre-existing
+ * pointers or indices may no longer correspond to the elements they did before
+ * insertion! Also, since it's full, the vector undergoes automatic expansion to
+ * fit the new element, so the vector's data block is resized. Resizing may
+ * relocate the data block to a totally different region of memory than the one
+ * still being pointed to by outside pointers!
+ *
+ * This fails, and doesn't modify the vector (or, if assertions are enabled,
+ * causes an assert crash), if any of the following are true:
+ *     - A temporary copy of the item can't be allocated
+ *     - The vector can't be expanded
+ *
+ * @param v The vector to insert to
+ * @param insertion_index_i The internal index to insert at
+ * @param elements_to_shift How many elements need to be displaced for insertion
+ * @param item The item to insert
+ */
+static void insert_when_no_room(Vec* v,
+                                size_t const insertion_index_i,
+                                size_t const elements_to_shift,
+                                void const* item)
+{
+    /*
+     * Dynamically allocate a temporary copy of the item. This way, if the item
+     * pointer is pointing to an item that's already inside the vector, we won't
+     * lose the item when the pointer gets invalidated after expanding the
+     * vector.
+     *
+     * Note that an alternative is searching the vector to get the index where
+     * the item is (if the item, or an exact copy, is in the vector), tracking
+     * the index across any shifts, and using the index to re-acquire the item
+     * after vector expansion and element shifting before insertion. This would
+     * require no dynamic allocation. However, since the item may be a struct,
+     * which means it has random ("uninitialized") padding bytes, and since we
+     * don't have a caller-supplied comparator, we'll have to use bytewise
+     * comparison of the elements when searching the vector. Since we're
+     * searching the vector for the same exact item, or an exact copy, bytewise
+     * comparison would still work despite the item's random padding bytes.
+     * Valgrind can't know this, though, and will issue "Conditional jump or
+     * move depends on uninitialised value(s)" errors for every struct insertion
+     * because we're comparing random bytes (even if it's against themselves).
+     * So, just to keep Valgrind output clean, dynamic allocation is used here
+     * instead of vector search and index acquisition.
+     */
+    void* tmp = malloc(v->element_size);
+
+    assert(tmp != NULL);
+    if (tmp == NULL)
+    {
+        return;
+    }
+    memcpy(tmp, item, v->element_size);
+
+    // Since the vector's full, expand it before insertion.
+    bool const resized = handle_capacity_exhaustion(v);
+
+    assert(resized);
+    if (!resized)
+    {
+        // Do nothing if expansion failed.
+        return;
+    }
+
+    /*
+     * Shift the elements at and after the insertion site to the right to make
+     * room for insertion.
+     */
+    if (elements_to_shift > 0)
+    {
+        // Shift element(s) to the right by one element's size in bytes.
+        memmove(v->data + insertion_index_i + v->element_size,
+                v->data + insertion_index_i,
+                elements_to_shift * v->element_size);
+    }
+
+    // Insert the item.
+    memcpy(v->data + insertion_index_i,
+           tmp,
+           v->element_size);
+    v->count += 1;
+    v->count_bytes += v->element_size;
+
+    // Free the temporary copy.
+    free(tmp);
+}
+
 bool Vec_insert(Vec* v,
                 size_t const insertion_index_e,
                 void const* item,
@@ -842,9 +1044,11 @@ bool Vec_insert(Vec* v,
     assert(v != NULL);
     assert(v->data != NULL);
     assert(item != NULL);
+    assert(item_size == v->element_size);
     if (v == NULL ||
         v->data == NULL ||
-        item == NULL)
+        item == NULL ||
+        item_size != v->element_size)
     {
         return false;
     }
@@ -860,112 +1064,55 @@ bool Vec_insert(Vec* v,
 
     assert(!element_count_overflowed);
     assert(!index_out_of_bounds);
-    assert(item_size == v->element_size);
     if (element_count_overflowed ||
-        index_out_of_bounds ||
-        item_size != v->element_size)
+        index_out_of_bounds)
     {
         return false;
     }
 
+    size_t const insertion_index_i = to_internal_index(v, insertion_index_e);
+    size_t const elements_to_shift = (v->count - insertion_index_e);
+
     /*
-     * If we have to resize the vector or to shift elements to make room for the
-     * insertion, we must consider whether the given item pointer is pointing to
-     * an element already inside the vector. If we don't, we'll run into a
-     * problem if the element behind the pointer shifts out from under the
-     * pointer or if, when the vector resizes, its data gets moved to a
-     * different block of memory. In the latter case, the data behind the
-     * pointer might be different, causing that different data to be inserted
-     * instead of the element originally behind the item pointer.
+     * How insertion is done depends on whether the vector's full.
      *
-     * To avoid all this, we'll reassign the item pointer to the first identical
-     * byte-for-byte instance of the element found in the vector. That instance
-     * might be the original element or a byte-for-byte copy of it. Either way,
-     * this will allow us to track the element data we want to insert if it
-     * moves before insertion.
+     * This is an insurance policy for the case where the given item pointer is
+     * pointing to an item that's already inside the vector. In such a case, the
+     * item will move out from under the pointer if it needs to shift along with
+     * the other elements to make room at the insertion site. If the vector is
+     * full and needs to be resized, the item might move out from under the
+     * pointer in an additional way: the vector's elements may be allocated to a
+     * totally different block of memory than the one where the item pointer
+     * would still be pointing. In other words, the item pointer will be
+     * invalidated before we get to insert the item.
      *
-     * (If, however, the item pointer is pointing to an element outside the
-     * vector, and that element just happens to have a byte-identical copy
-     * inside the vector, this is just benign overhead. It's still necessary,
-     * however, since there's no way to know if the item pointer is pointing
-     * inside the vector -- at least not without pointer address comparison,
-     * which is avoided for safety/portability and totally not superstition
-     * surrounding rumored GCC bugs in that StackOverflow article linked
-     * elsewhere in this file.)
+     * When this is not the case -- when the item pointer is NOT pointing to an
+     * item already inside the vector -- this is all unfortunate overhead, but
+     * there's no way to know if the item pointer is pointing inside the vector,
+     * at least not without pointer address comparison (which is avoided for
+     * safety/portability and totally not superstition surrounding rumored GCC
+     * bugs in that StackOverflow article linked elsewhere in this file).
+     *
+     * To handle this case in a way that doesn't involve bytewise comparison
+     * between the vector's elements and the item to acquire its index (this
+     * would work whether the vector's full or not but causes Valgrind errors
+     * due to bytewise comparison of the random padding bytes when the elements
+     * are structs), two different methods are employed based on whether the
+     * vector is full.
      */
-    size_t reassigned_target_e = 0; // External index to reassigned target
-    bool const should_reassign_target = Vec_has(v, item, v->element_size);
-
-    if (should_reassign_target)
-    {
-        /*
-         * Reassign to the first byte-for-byte identical instance of the element
-         * found in the vector (whether that's the actual element already behind
-         * the item pointer or a copy).
-         */
-        reassigned_target_e = Vec_where(v, item, v->element_size);
-    }
-
-    // If at capacity, try to expand the vector first.
     if (v->count == v->capacity)
     {
-        if (!handle_capacity_exhaustion(v))
-        {
-            // Do nothing if expansion failed.
-            return false;
-        }
-    }
-
-    /*
-     * Shift the elements at and after the insertion site to the right to make
-     * room for insertion.
-     */
-    size_t const insertion_index_i = to_internal_index(v, insertion_index_e);
-    size_t elements_to_shift = (v->count - insertion_index_e);
-
-    if (elements_to_shift >= 1)
-    {
-        if (should_reassign_target)
-        {
-            // If the reassigned target will be shifted, account for that.
-            if (insertion_index_e <= reassigned_target_e)
-            {
-                reassigned_target_e += 1;
-            }
-        }
-
-        // Shift element(s) to the right by one element's size in bytes.
-        memmove(v->data + insertion_index_i + v->element_size,
-                v->data + insertion_index_i,
-                elements_to_shift * v->element_size);
-    }
-
-    // Insert the (potentially reassigned) item.
-    void const* insertion_target = NULL;
-
-    if (should_reassign_target)
-    {
-        /*
-         * If we reassigned the insertion target to an element already in the
-         * vector, use that element's (possibly shift-adjusted) index.
-         */
-        insertion_target = v->data + to_internal_index(v, reassigned_target_e);
+        insert_when_no_room(v,
+                            insertion_index_i,
+                            elements_to_shift,
+                            item);
     }
     else
     {
-        /*
-         * Otherwise, we're guaranteed that the given item pointer is pointing
-         * to an element outside the vector, so no reassignment is necessary.
-         * Just use the given item pointer.
-         */
-        insertion_target = item;
+        insert_when_room(v,
+                         elements_to_shift,
+                         item);
     }
-
-    memcpy(v->data + insertion_index_i,
-           insertion_target,
-           v->element_size);
-    v->count += 1;
-    v->count_bytes += v->element_size;
 
     return true;
 }
@@ -1094,64 +1241,6 @@ size_t Vec_remove(Vec* v, size_t const external_index)
     return external_index;
 }
 
-/**
- * @brief Swaps the elements at the given internal indices in the given vector
- *
- * WARNING: This may invalidate stored pointers or indices! After a vector's
- * elements are swapped, pointers or indices that used to correspond to those
- * elements in the vector will now correspond to the swapped element!
- *
- * This fails, and doesn't modify the vector (or, if assertions are enabled,
- * causes an assert crash), if any of the following are true:
- *     - The indices are the same
- *     - Either index is not aligned on an element boundary (and thus invalid
- *       since it's not pointing to the first byte of an element)
- *     - Either index is out of bounds of the vector's elements
- *     - The vector pointer is null
- *
- * @param v The vector to swap the elements of
- * @param a The internal index of an element
- * @param b The internal index of another element
- * @return Whether the elements were swapped
- */
-static bool swap(Vec* v, size_t const a, size_t const b)
-{
-    assert(v != NULL);
-    assert(v->data != NULL);
-    if (v == NULL ||
-        v->data == NULL)
-    {
-        return false;
-    }
-
-    assert(a != b);
-    assert(a % v->element_size == 0); // Aligned on element boundary
-    assert(b % v->element_size == 0);
-    assert(a < v->count_bytes); // Within element bounds
-    assert(b < v->count_bytes);
-    if (a == b ||
-        a % v->element_size != 0 ||
-        b % v->element_size != 0 ||
-        a >= v->count_bytes ||
-        b >= v->count_bytes)
-    {
-        return false;
-    }
-
-    // Iterate through the elements' bytes and swap one byte pair at a time.
-    for (size_t i = 0; i < v->element_size; ++i)
-    {
-        uint8_t* a_byte = (v->data + a + i);
-        uint8_t* b_byte = (v->data + b + i);
-
-        *a_byte ^= *b_byte;
-        *b_byte ^= *a_byte;
-        *a_byte ^= *b_byte;
-    }
-
-    return true;
-}
-
 size_t Vec_remove_all_if(Vec* v,
                          bool (*predicate)(void const*, size_t const))
 {
@@ -1171,15 +1260,16 @@ size_t Vec_remove_all_if(Vec* v,
      *
      * The most obvious way to do this would be to iterate through the vector
      * and, for every element that satisfies the predicate, call the regular
-     * remove method with that element's index.
+     * remove function with that element's index.
      *
-     * However, for every removed element `x`, this would shift all the elements
-     * after `x` to keep the vector contiguous. Since we're potentially removing
-     * some of those shifted elements, those shifts are a waste! And each shift
-     * can be thought of as a linear traversal of the vector's byte array, so
-     * that's `r` traversals where `r` is the number of elements removed. That's
-     * on top of the traversal we were doing to find elements that satisfy the
-     * predicate, so it's a total of `r + 1` traversals.
+     * However, for every removed element `x`, the remove function would shift
+     * all the elements after `x` to the left to keep the vector contiguous.
+     * Since we're potentially removing some of those shifted elements as well,
+     * those shifts are a waste! Each shift can be thought of as a linear
+     * traversal of the vector's byte array, so that's `r` traversals where `r`
+     * is the number of elements removed. That's on top of the traversal we were
+     * doing to find elements that satisfy the predicate, so it's a total of
+     * `r + 1` traversals.
      *
      * We can actually do it in just 1 traversal if we swap the elements that we
      * know we're NOT removing!

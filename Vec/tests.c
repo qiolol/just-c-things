@@ -990,6 +990,13 @@ static void test_insert_invalid(void)
      */
     uint8_t const diff_kind[8] = { 1, 0, 0, 0, 0, 0, 0, 0 };
 
+    // Insert the array of `uint8_t`s as though it were a single `uint64_t`.
+    assert(Vec_insert(v,
+                      0,
+                      &diff_kind,
+                      sizeof(diff_kind)) == true);
+    assert(Vec_count(v) == 3); // Insertion was accepted.
+
     /*
      * As a `uint64_t`, an array like `{ 1, 0, 0, 0, 0, 0, 0, 0 }` is 1 if read
      * as little-endian. Whatever it is, it should be the same when read back as
@@ -998,13 +1005,6 @@ static void test_insert_invalid(void)
     uint64_t as_a_single_number = 0;
 
     memcpy(&as_a_single_number, &diff_kind, sizeof(uint8_t[8]));
-
-    // Insert the array of `uint8_t`s as though it were a single `uint64_t`.
-    assert(Vec_insert(v,
-                      0,
-                      &diff_kind,
-                      sizeof(diff_kind)) == true);
-    assert(Vec_count(v) == 3); // Insertion was accepted.
     probe = (uint64_t*) Vec_get(v, 0);
     assert(probe != NULL);
     assert(*probe == as_a_single_number); // Read the array as one `uint64_t`.
