@@ -844,6 +844,8 @@
         - https://news.ycombinator.com/item?id=36427264
         - https://rust-hosted-langs.github.io/book/chapter-simple-bump.html
         - https://stackoverflow.com/questions/12825148/what-is-the-meaning-of-the-term-arena-in-relation-to-memory#12825221
+    [ ] `alignas` keyword?!
+    [x] "Takeaway 12.18 (Effective Type)" from page 199 of Modern C (Jens Gustedt) says, "Objects must be accessed through their effective type or through a pointer to a character type"! In one of the tests, we access the memory of a `uint8_t[8]` through a `uin64_t` and `uin64_t*`. This seems to work perfectly in the test, but the book says this is UB... so, to be on the safe side, let's remove that code.
     [y] will we be offering the makefile in the repo?
         - the only reason it's there is to easily build and run the code with test and example executables
         - not offering it in the repo provides an obstacle to running and testing the code...
