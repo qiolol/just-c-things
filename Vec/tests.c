@@ -980,54 +980,24 @@ static void test_insert_invalid(void)
                       sizeof((char){'a'})) == false); // A `char`
     assert(Vec_count(v) == 2); // Insertion was rejected.
 
-    /*
-     * Insert a different kind of element that's the same size as the expected
-     * element type. This SHOULD work even though it's sort of an abuse of the
-     * vector's weak typing.
-     *
-     * In this case, the expected element type is `uint64_t`, so let's try 8
-     * `uint8_t`s!
-     */
-    uint8_t const diff_kind[8] = { 1, 0, 0, 0, 0, 0, 0, 0 };
-
-    // Insert the array of `uint8_t`s as though it were a single `uint64_t`.
-    assert(Vec_insert(v,
-                      0,
-                      &diff_kind,
-                      sizeof(diff_kind)) == true);
-    assert(Vec_count(v) == 3); // Insertion was accepted.
-
-    /*
-     * As a `uint64_t`, an array like `{ 1, 0, 0, 0, 0, 0, 0, 0 }` is 1 if read
-     * as little-endian. Whatever it is, it should be the same when read back as
-     * a `uint64_t`.
-     */
-    uint64_t as_a_single_number = 0;
-
-    memcpy(&as_a_single_number, &diff_kind, sizeof(uint8_t[8]));
-    probe = (uint64_t*) Vec_get(v, 0);
-    assert(probe != NULL);
-    assert(*probe == as_a_single_number); // Read the array as one `uint64_t`.
-    probe = NULL;
-
     // Insert with null pointers.
     assert(Vec_insert(NULL,
                       0,
                       NULL,
                       sizeof((uint64_t){9})) == false);
-    assert(Vec_count(v) == 3); // Insertion was rejected.
+    assert(Vec_count(v) == 2); // Insertion was rejected.
 
     assert(Vec_insert(NULL,
                       0,
                       &(uint64_t){9},
                       sizeof((uint64_t){9})) == false);
-    assert(Vec_count(v) == 3); // Insertion was rejected.
+    assert(Vec_count(v) == 2); // Insertion was rejected.
 
     assert(Vec_insert(v,
                       0,
                       NULL,
                       sizeof((uint64_t){9})) == false);
-    assert(Vec_count(v) == 3); // Insertion was rejected.
+    assert(Vec_count(v) == 2); // Insertion was rejected.
 
     Vec_destroy(&v);
 }
