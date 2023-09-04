@@ -1,52 +1,94 @@
 CC = gcc
 CFLAGS = -std=c17 \
-	 -Og \
-	 -g3 \
 	 -Wall \
 	 -Wextra \
 	 -Werror \
 	 -pedantic \
-	 -pedantic-errors \
-	 -fsanitize=undefined
+	 -pedantic-errors
 
-.PHONY: all clean
+.PHONY: buildmode all clean
 
-EXAMPLE_EXECUTABLE = example.exe
-TEST_EXECUTABLE = tests.exe
+EXAMPLE_EXE = example.exe
+TESTS_EXE = tests.exe
+
+# Apply build mode
+BUILD_DIR = $(mode)
+
+ifeq ($(mode), debug)
+CFLAGS += -Og \
+	  -g3 \
+	  -fsanitize=undefined
+else ifeq ($(mode), release)
+CFLAGS += -O3
+endif
+
+# Handy shorthand for making directories if they don't exist (Unix-only!)
+MAKE_DIR=@mkdir -p $(@D)
 
 # Builds all executables
-all: ${EXAMPLE_EXECUTABLE} ${TEST_EXECUTABLE}
+all: buildmode $(BUILD_DIR)/$(EXAMPLE_EXE) $(BUILD_DIR)/$(TESTS_EXE)
 
 # Deletes artifacts
 clean:
-	# "🧹..."
-	rm -f *.o
-	rm -f *.exe
+	@echo "🧹  ..."
+	rm -f debug/*.o
+	rm -f debug/*.exe
 
-# This one's a usage demo of the vector.
-${EXAMPLE_EXECUTABLE}: example.o Vec.o
-	${CC} ${CFLAGS} -lm example.o Vec.o -o ${EXAMPLE_EXECUTABLE}
+	rm -f release/*.o
+	rm -f release/*.exe
 
-example.o: example.c Vec.h
-	${CC} ${CFLAGS} -c example.c -o example.o
+# Checks and applies the build mode
+buildmode:
+# Check for valid build mode
+ifneq ($(mode), debug)
+ifneq ($(mode), release)
+	@echo "Valid build mode needed."
+	@echo "Run \`make\` with \`mode=debug\` or \`mode=release\`."
+	@exit 1
+endif
+endif
 
-Vec.o: Vec.c Vec.h
-	${CC} ${CFLAGS} -c Vec.c -o Vec.o
+# Build the executable of the usage demo.
+$(BUILD_DIR)/$(EXAMPLE_EXE): $(BUILD_DIR)/example.o $(BUILD_DIR)/Vec.o
+	$(MAKE_DIR)
+	@echo "🏗️  Building $(BUILD_DIR)/$(EXAMPLE_EXE)"
+	${CC} ${CFLAGS} -lm $(BUILD_DIR)/example.o \
+	                    $(BUILD_DIR)/Vec.o -o \
+	                    $(BUILD_DIR)/$(EXAMPLE_EXE)
 
-# This one's for the unit tests.
+$(BUILD_DIR)/example.o: example.c Vec.h
+	$(MAKE_DIR)
+	${CC} ${CFLAGS} -c example.c \
+	                -o $(BUILD_DIR)/example.o
+
+$(BUILD_DIR)/Vec.o: Vec.c Vec.h
+	$(MAKE_DIR)
+	${CC} ${CFLAGS} -c Vec.c \
+	                -o $(BUILD_DIR)/Vec.o
+
+# Build the executable of the unit tests.
 #
-# For the tests, we don't want the vector's asserts to fire. We only want the
-# tests' asserts to fire as the tests verify whether the vector code handles
-# assert-offending cases gracefully when asserts are disabled.
+# For this, we don't want the vector's asserts to fire. We only want the tests'
+# asserts to fire. The tests verify whether the vector code handles
+# assert-offending cases gracefully when vector asserts are disabled.
 #
-# So, to disable the vector code's asserts, the test executable will use a test
-# version of the vector code object with asserts disabled.
-${TEST_EXECUTABLE}: tests.o Vec_test.o
-	${CC} ${CFLAGS} -lm tests.o Vec_test.o -o ${TEST_EXECUTABLE}
+# So the test executable has to use a testing-specific version of the vector
+# code object -- one with asserts disabled via `-DNDEBUG`.
+$(BUILD_DIR)/$(TESTS_EXE): $(BUILD_DIR)/tests.o $(BUILD_DIR)/Vec_test.o
+	$(MAKE_DIR)
+	@echo "🏗️  Building $(BUILD_DIR)/$(TESTS_EXE)"
+	${CC} ${CFLAGS} -lm $(BUILD_DIR)/tests.o \
+	                    $(BUILD_DIR)/Vec_test.o \
+	                    -o $(BUILD_DIR)/$(TESTS_EXE)
 
-tests.o: tests.c Vec.h
-	${CC} ${CFLAGS} -c tests.c -o tests.o
+$(BUILD_DIR)/tests.o: tests.c Vec.h
+	$(MAKE_DIR)
+	${CC} ${CFLAGS} -c tests.c \
+	                -o $(BUILD_DIR)/tests.o
 
-# Test version of the vector code object with asserts disabled via `-DNDEBUG`
-Vec_test.o: Vec.c Vec.h
-	${CC} ${CFLAGS} -DNDEBUG -c Vec.c -o Vec_test.o
+# Test-specific version of the vector code object with asserts disabled via
+# `-DNDEBUG`
+$(BUILD_DIR)/Vec_test.o: Vec.c Vec.h
+	$(MAKE_DIR)
+	${CC} ${CFLAGS} -DNDEBUG -c Vec.c \
+	                         -o $(BUILD_DIR)/Vec_test.o

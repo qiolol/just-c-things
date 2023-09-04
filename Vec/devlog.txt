@@ -837,14 +837,27 @@
                                 - As consolation, this case'll be hit rarely -- only when inserting into a full vector.
             [x] compiled with max optimizations
     [x] remove any debug statements from code
-    [/] a possible limtation of the encapsulated struct design is that users can't embed them in their own structs; is that true?
+    [y] a possible limtation of the encapsulated struct design is that users can't embed them in their own structs; is that true?
         - https://news.ycombinator.com/item?id=35594787
         - try it in `main()` after testing verifies things work correctly
-    [ ] turns out we might be using what's called "arenas" and "bump allocation"! look into these:
+        - Yep; you can only embed `Vec*`s into structs; `Vec` is an incomplete type outside of the vector module, as expected. Callers are forced to use pointers with dynamically allocated vectors behind those pointers.
+            - The only way to add flexibility wrt the allocation (as a poster mentions in that thread) would be to let callers allocate a block of memory however they want and pass that block of memory into the vector module...
+    [x] turns out we might be using what's called "arenas" and "bump allocation"! look into these:
         - https://news.ycombinator.com/item?id=36427264
+            - "Wikipedia calls it a region, zone, arena, area, or memory context"
         - https://rust-hosted-langs.github.io/book/chapter-simple-bump.html
         - https://stackoverflow.com/questions/12825148/what-is-the-meaning-of-the-term-arena-in-relation-to-memory#12825221
-    [ ] `alignas` keyword?!
+        - Yep! Seems like it. "The basic concept of regions is very old, first appearing as early as 1967 in Douglas T. Ross's AED Free Storage Package"... and I only discovered it a few months ago. :D
+    [/] `alignas` keyword?!
+        - Explicitly sets the alignment requirement of a thing (hopefully to greater-than-or-equal its default alignment, checked with `alignof`)
+        - So far, we've been using allocation in multiples of the (assumed) CPU's word size in `word_align_size()` to hopefully improve alignment of the vector's data block indirectly. The idea (which could be very wrong since this is all new stuff to me) is that, if the data block is a multiple of the word size, there's a higher chance the data block will be aligned on a word boundary. But I'm not at all sure that that's the case.
+        - It seems like `alignas` sets the alignment explicitly, so we might not need `word_align_size()` anymore.
+        - But this may all be a "half knowledge is more dangerous than total ignorance" situation. Qt's docs say:
+            ```
+            Some memory allocators perform worst when requested exact powers of two, because they use a few bytes per block for book-keeping.
+            ```
+            And "a few" is implementation-dependent but is usually 12...
+        [ ] Let's just remove the alignment stuff altogether; it probably doesn't do anything anyway.
     [x] "Takeaway 12.18 (Effective Type)" from page 199 of Modern C (Jens Gustedt) says, "Objects must be accessed through their effective type or through a pointer to a character type"! In one of the tests, we access the memory of a `uint8_t[8]` through a `uin64_t` and `uin64_t*`. This seems to work perfectly in the test, but the book says this is UB... so, to be on the safe side, let's remove that code.
     [y] will we be offering the makefile in the repo?
         - the only reason it's there is to easily build and run the code with test and example executables
@@ -852,12 +865,14 @@
         - what happens if someone's makefile ends up caling our makefile?
         - what if they incorporate the module into their project, do a release build, and call our makefile with theirs, while ours is not prepared for release mode?
             - I guess we should make our makefile offer debug and release builds...
-            [ ] make makefile be able to make both debug and release builds
+            [x] make makefile be able to make both debug and release builds
                 - https://stackoverflow.com/q/792217
                 - https://stackoverflow.com/q/1079832
-                [ ] leave `-fsanitize=undefined` out of release builds
-        [ ] Since this is one of hypothetically several standalone modules, the toplevel dir of the repo should have a "root Makefile" capable of building every subdir's Makefile
+                [x] leave `-fsanitize=undefined` out of release builds
+        [-] Since this is one of hypothetically several standalone modules, the toplevel dir of the repo should have a "root Makefile" capable of building every subdir's Makefile
             - https://stackoverflow.com/a/1139313
+            - Actually, nah. It's a cool thing to do, but every module in here is totally standalone, so why bother?
+        [ ] Let's provide `debug` and `release` targets if possible (rather than using build mode env var).
     [ ] run docs through spellchecker
     [ ] benchmark it against a C++ `std::vector`!
         - if it's faster, THAS AWESOOOOMEE
