@@ -872,7 +872,7 @@
         [-] Since this is one of hypothetically several standalone modules, the toplevel dir of the repo should have a "root Makefile" capable of building every subdir's Makefile
             - https://stackoverflow.com/a/1139313
             - Actually, nah. It's a cool thing to do, but every module in here is totally standalone, so why bother?
-        [ ] Let's provide `debug` and `release` targets if possible (rather than using build mode env var).
+        [x] Let's provide `debug` and `release` targets if possible (rather than using build mode env var).
     [ ] run docs through spellchecker
     [ ] benchmark it against a C++ `std::vector`!
         - if it's faster, THAS AWESOOOOMEE
