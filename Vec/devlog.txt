@@ -848,7 +848,7 @@
         - https://rust-hosted-langs.github.io/book/chapter-simple-bump.html
         - https://stackoverflow.com/questions/12825148/what-is-the-meaning-of-the-term-arena-in-relation-to-memory#12825221
         - Yep! Seems like it. "The basic concept of regions is very old, first appearing as early as 1967 in Douglas T. Ross's AED Free Storage Package"... and I only discovered it a few months ago. :D
-    [/] `alignas` keyword?!
+    [-] `alignas` keyword?!
         - Explicitly sets the alignment requirement of a thing (hopefully to greater-than-or-equal its default alignment, checked with `alignof`)
         - So far, we've been using allocation in multiples of the (assumed) CPU's word size in `word_align_size()` to hopefully improve alignment of the vector's data block indirectly. The idea (which could be very wrong since this is all new stuff to me) is that, if the data block is a multiple of the word size, there's a higher chance the data block will be aligned on a word boundary. But I'm not at all sure that that's the case.
         - It seems like `alignas` sets the alignment explicitly, so we might not need `word_align_size()` anymore.
@@ -857,7 +857,13 @@
             Some memory allocators perform worst when requested exact powers of two, because they use a few bytes per block for book-keeping.
             ```
             And "a few" is implementation-dependent but is usually 12...
-        [ ] Let's just remove the alignment stuff altogether; it probably doesn't do anything anyway.
+            [x] Let's just remove the alignment stuff altogether; it probably doesn't do anything anyway and, at worst, may actually hurt performance.
+            [x] Rerun tests
+            ! Before removing our attempt at word alignment, the insertion benchmark was (average across 3 runs):
+                - 2.11987 ms
+            ! After, it's (average across 3 runs):
+                - 1.453843 ms
+            ? So maybe it WAS hurting performance...
     [x] "Takeaway 12.18 (Effective Type)" from page 199 of Modern C (Jens Gustedt) says, "Objects must be accessed through their effective type or through a pointer to a character type"! In one of the tests, we access the memory of a `uint8_t[8]` through a `uin64_t` and `uin64_t*`. This seems to work perfectly in the test, but the book says this is UB... so, to be on the safe side, let's remove that code.
     [y] will we be offering the makefile in the repo?
         - the only reason it's there is to easily build and run the code with test and example executables
@@ -873,12 +879,84 @@
             - https://stackoverflow.com/a/1139313
             - Actually, nah. It's a cool thing to do, but every module in here is totally standalone, so why bother?
         [x] Let's provide `debug` and `release` targets if possible (rather than using build mode env var).
-    [ ] run docs through spellchecker
-    [ ] benchmark it against a C++ `std::vector`!
+    [x] benchmark it against a C++ `std::vector`!
         - if it's faster, THAS AWESOOOOMEE
         - if it's slower, hey -- we now have a vector in C... it's like having a toilet when camping... or something
-        [ ] also compare after adding `inline` to `convert_index()`
+        [x] in benchmark C++ program, be able to call code from C implementation
+        [x] set up timers
+        [x] set up hopefully useful benchmarks to time both vectors through
+        🗒️ HA! Results are in... and our vector gets CREAMED by `std::vector`. Various operations with 1 million elements:
+            ```
+            ##########################################
+            Append
+                         My Vec: 4.87459 ms
+                    std::vector: 2.12879 ms
+
+            WINNER: std::vector
+
+            ##########################################
+            Append with resize
+                         My Vec: 5.68278 ms
+                    std::vector: 2.81664 ms
+
+            WINNER: std::vector
+
+            ##########################################
+            Remove all even elements
+                         My Vec: 7.50844 ms
+                    std::vector: 0.426813 ms
+
+            WINNER: std::vector
+
+            ##########################################
+            Insertion
+                         My Vec: 1.60187 ms
+                    std::vector: 0.239872 ms
+
+            WINNER: std::vector
+
+            ##########################################
+            Search for a random element
+                         My Vec: 1.59298 ms
+                    std::vector: 0.136588 ms
+
+            WINNER: std::vector
+
+            ##########################################
+            Applying an operation on all elements
+                         My Vec: 1.43462 ms
+                    std::vector: 0.242898 ms
+
+            WINNER: std::vector
+            ```
+            🐌 2 times slower appending 1 million elements...
+            🐌 ~20 TIMES slower removing all even elements!
+            - Not great! But hey, it's like a handmade battery-powered drill vs. an industrial one that plugs into a wall.
+        [x] also compare after adding `inline` to `convert_index()`
             - it seems like a good candidate for it
             - but I don't have the guts to throw it around without benchmark evidence
+            🗒️ Findings
+                - Before inlining, averaging across several runs:
+                    - Appending 1 million elements: 5.245 ms
+                    - Inserting into 1 million elements: 1.596 ms
+                - After:
+                    - Appending 1 million elements: 5.284 ms
+                    - Inserting into 1 million elements: 1.445 ms
+                - So not much difference observed.
+                    [x] Let's remove the `inline` then.
+        [x] How about inlining `swap()`?
+            - Also a good candidate, code-wise, and you'd think it would heavily impact insertion and `Vec_remove_all_if()`, where it's potentially used a lot.
+            🗒️ Findings
+                - Before inlining, averaging across several runs:
+                    - Removing all even elements among 1 million elements: 7.490 ms
+                    - Inserting into 1 million elements: 1.596 ms
+                - After:
+                    - Removing all even elements among 1 million elements: 7.504 ms
+                    - Inserting into 1 million elements: 1.577 ms
+                - So, again, not much difference.
+                    [x] Let's remove the `inline` then.
+        [x] add benchmark code to repo (it's in C++ in a repo called "just C things"... but hey)
     [ ] do demo in `example.c`
     [ ] have nice run instructions somewhere like https://github.com/clementine-player/Clementine#compiling-from-source
+        [ ] also in benchmarking code!
+    [ ] run docs through spellchecker
