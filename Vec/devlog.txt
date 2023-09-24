@@ -1,4 +1,4 @@
-[/] 🔳🔳🔳🔳🔳 Implement a C vector (again! ... I last did it like 5 years ago)
+[x] 🔳🔳🔳🔳🔳 Implement a C vector (again! ... I last did it like 5 years ago)
     [x] start with naive implementation
     [x] refactor to use `capacity` in unit tests...
     [-] make more tests for new/overlooked null cases
@@ -956,7 +956,7 @@
                 - So, again, not much difference.
                     [x] Let's remove the `inline` then.
         [x] add benchmark code to repo (it's in C++ in a repo called "just C things"... but hey)
-    [ ] do demo in `example.c`
-    [ ] have nice run instructions somewhere like https://github.com/clementine-player/Clementine#compiling-from-source
-        [ ] also in benchmarking code!
-    [ ] run docs through spellchecker
+    [x] do demo in `example.c`
+    [x] have nice run instructions somewhere like https://github.com/clementine-player/Clementine#compiling-from-source
+        [x] also in benchmarking code!
+    [x] run docs through spellchecker
