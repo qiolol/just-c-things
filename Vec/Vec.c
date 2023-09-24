@@ -17,99 +17,6 @@ struct Vec
     size_t count_bytes; // Current element count in bytes
 };
 
-/**
- * @brief Rounds the given number of bytes up to the next (probably)
- * word-aligned size
- *
- * This is meant mainly to calculate a "big enough and then some" size based on
- * the memory size requested that minimizes the vector's future reallocations.
- * For that, any scheme of allocating-a-little-more-than-you-actually-need would
- * do, but word-alignment MAY also boost performance by MAYBE reducing the
- * number of reads the processor has to do when working with the vector's data
- * block. The hope is (I think), if the vector's data block is a multiple of the
- * processor's word size (e.g., the data block is EXACTLY 4 words long or
- * EXACTLY 9 words long -- EXACTLY some number of words long, not a little more
- * or a little less), it's more likely to be aligned at a word boundary in
- * memory. That means the CPU will be able to read a word of the data block in
- * one (word-sized) read. Were the data block not aligned on a word boundary
- * (picture a word of the block half in one word segment in RAM, half in the
- * next word segment), the CPU would need to do 2 reads to get both halves of
- * the data block's word then and  reassemble them. Legends say some (RISC?)
- * CPUs even throw an  exception when reading non-aligned memory!
- *
- * This fails, and returns 0 (or, if assertions are enabled, causes an assert
- * crash), if the given number is so huge that calculating the next-biggest
- * word-aligned size overflows.
- *
- * @param requested_bytes A number of bytes (e.g., from a new capacity request)
- * @return A word-aligned number greater-than-or-equal to the given number
- */
-static size_t word_align_size(size_t const requested_bytes)
-{
-    /*
-     * To word-align the number of bytes, it'll be sized as a multiple of
-     * `sizeof(void*) * 8`.
-     *
-     * Rationale: it's (dangerously) assumed that `sizeof(void*)` is equal to
-     * the processor's word size (which is not always true). It's also assumed
-     * the word size is a multiple of 8, hence `* 8`.
-     *
-     * On a 64-bit CPU with 8 byte words, aligned sizes will be multiples of
-     * `8 * 8 = 64` bytes, or 8 words, of memory.
-     *
-     * On a 32-bit CPU with 4 byte words, they will be multiples of `4 * 8 = 32`
-     * bytes, again 8 words, of memory.
-     */
-    size_t const alignment = sizeof(void*) * 8;
-    size_t aligned_bytes = 1;
-
-    if (requested_bytes % alignment == 0)
-    {
-        // If the requested size already appears word-aligned, use it as-is.
-        aligned_bytes = requested_bytes;
-    }
-    else
-    {
-        /*
-         * Word-align the block size.
-         *
-         * E.g., if the requested size is 65, the next-largest aligned size is
-         * 128.
-         */
-        size_t const next_aligned_exponent = (size_t) log2(requested_bytes) + 1;
-
-        /*
-         * Exponentiate in a loop so overflow can be caught without having to
-         * use `errno` (because using `errno` is unpleasant).
-         */
-        for (size_t i = 0; i < next_aligned_exponent; ++i)
-        {
-            // (If okay with requiring C23, this should just be a `ckd_mul()`.)
-            bool const align_overflow = aligned_bytes > (SIZE_MAX / 2);
-
-            assert(!align_overflow);
-            if (align_overflow)
-            {
-                return 0;
-            }
-
-            aligned_bytes *= 2;
-        }
-
-        if (aligned_bytes < alignment)
-        {
-            /*
-             * If the requested size was so small that the next-largest aligned
-             * size is under the alignment factor, just use the alignment
-             * factor.
-             */
-            aligned_bytes = alignment;
-        }
-    }
-
-    return aligned_bytes;
-}
-
 Vec* Vec_new(size_t const least_capacity,
              size_t const element_size)
 {
@@ -150,32 +57,8 @@ Vec* Vec_new(size_t const least_capacity,
     v->count = 0;
     v->count_bytes = 0;
 
-    /*
-     * We want an initial capacity that's at least as large as the requested
-     * capacity but whose size in bytes is (hopefully) word-aligned.
-     */
-    size_t const aligned_bytes = word_align_size(least_capacity * element_size);
-
-    if (aligned_bytes == 0)
-    {
-        // Abort if alignment failed.
-        free(v);
-        return NULL;
-    }
-
-    /*
-     * The actual element capacity will be the number of elements that fit in
-     * the word-aligned number of bytes.
-     *
-     * Any spare bytes left over will be unused.
-     *
-     * E.g., if the caller passed in a minimum capacity of 5 and an element size
-     * of 13, that's a requested size of `5 * 13 = 65` bytes. We word-align that
-     * to 128 bytes. The actual capacity is `128 / 13 = 9.8 ~= 9` elements, with
-     * `128 - (9 * 13) = 11` bytes left over, which will be unused.
-     */
-    v->capacity = aligned_bytes / element_size;
-    v->capacity_bytes = aligned_bytes;
+    v->capacity_bytes = least_capacity * element_size;
+    v->capacity = v->capacity_bytes / element_size;
 
     // Allocate the vector's element block.
     v->data = malloc(v->capacity_bytes);
@@ -387,8 +270,8 @@ bool Vec_equal(Vec const* v_a,
  * @return The converted index
  */
 static size_t convert_index(Vec const* v,
-                            size_t const index,
-                            bool const to_external)
+                                   size_t const index,
+                                   bool const to_external)
 {
     assert(v != NULL);
     if (v == NULL)
@@ -768,16 +651,9 @@ static bool handle_capacity_exhaustion(Vec* v)
         return false;
     }
 
-    size_t const expanded_capacity = v->capacity_bytes * expansion_factor;
-    size_t const aligned_bytes = word_align_size(expanded_capacity);
+    size_t const expanded_capacity = v->capacity * expansion_factor;
 
-    // Similarly, do nothing if alignment fails.
-    if (aligned_bytes == 0)
-    {
-        return false;
-    }
-
-    return Vec_resize(v, aligned_bytes);
+    return Vec_resize(v, expanded_capacity);
 }
 
 bool Vec_append(Vec* v, void const* item, size_t const item_size)
