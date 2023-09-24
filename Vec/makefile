@@ -1,10 +1,10 @@
 CC = gcc
-CFLAGS = -std=c17 \
+CFLAGS = -std=c11 \
 	 -Wall \
 	 -Wextra \
 	 -Werror \
 	 -pedantic \
-	 -pedantic-errors
+	 -pedantic-errors \
 
 DIR_DEBUG = debug
 DIR_RELEASE = release
@@ -14,12 +14,26 @@ TESTS_EXE = tests.exe
 
 MAKE_DIR=@mkdir -p $(@D)
 
-.PHONY: all debug release clean
+################################
+# Non-file targets             #
+################################
+.PHONY: all clean debug release
 
-# Builds all executables in ALL build modes
+# Builds test and example executables in both build modes
 all: debug release
 
-# Builds all executables with debug info
+# Deletes artifacts
+clean:
+	rm -f $(DIR_DEBUG)/*.o
+	rm -f $(DIR_DEBUG)/*.exe
+
+	rm -f $(DIR_RELEASE)/*.o
+	rm -f $(DIR_RELEASE)/*.exe
+
+	rm -f $(DIR_BENCHMARK)/*.o
+	rm -f $(DIR_BENCHMARK)/*.exe
+
+# Builds test and example executables with debug info
 debug: export DIR = $(DIR_DEBUG)
 debug: override CFLAGS += -Og -g -fsanitize=undefined
 debug:
@@ -28,7 +42,7 @@ debug:
 	$(MAKE) $(DIR)/$(EXAMPLE_EXE) DIR=$(DIR)
 	$(MAKE) $(DIR)/$(TESTS_EXE) DIR=$(DIR)
 
-# Builds all executables with optimizations
+# Builds test and example executables with optimizations
 release: export DIR = $(DIR_RELEASE)
 release: override CFLAGS += -O3
 release:
@@ -37,14 +51,17 @@ release:
 	$(MAKE) $(DIR)/$(EXAMPLE_EXE) DIR=$(DIR)
 	$(MAKE) $(DIR)/$(TESTS_EXE) DIR=$(DIR)
 
+################################
+# File targets                 #
+################################
 # Builds the usage demo
 $(DIR)/$(EXAMPLE_EXE): $(DIR)/example.o $(DIR)/Vec.o
 	$(MAKE_DIR)
 	@echo "# # # # # # # # # # # # # # # # "
 	@echo "# Building $(DIR)/$(EXAMPLE_EXE)"
 	${CC} ${CFLAGS} -lm $(DIR)/example.o \
-	                    $(DIR)/Vec.o -o \
-	                    $(DIR)/$(EXAMPLE_EXE)
+	                    $(DIR)/Vec.o \
+	                    -o $(DIR)/$(EXAMPLE_EXE)
 
 $(DIR)/example.o: example.c Vec.h
 	$(MAKE_DIR)
@@ -83,11 +100,3 @@ $(DIR)/Vec_test.o: Vec.c Vec.h
 	$(MAKE_DIR)
 	${CC} ${CFLAGS} -DNDEBUG -c Vec.c \
 	                         -o $(DIR)/Vec_test.o
-
-# Deletes artifacts
-clean:
-	rm -f $(DIR_DEBUG)/*.o
-	rm -f $(DIR_DEBUG)/*.exe
-
-	rm -f $(DIR_RELEASE)/*.o
-	rm -f $(DIR_RELEASE)/*.exe
