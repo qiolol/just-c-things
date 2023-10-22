@@ -51,13 +51,17 @@
 typedef struct Vec Vec;
 
 /**
- * @brief Creates a new vector prepared to hold the given number of elements,
+ * @brief Allocates a new vector prepared to hold the given number of elements,
  * each of which is the given size in bytes
  *
- * The starting capacity parameter is a hint, not the exact number, of how much
- * memory the vector should allocate for elements internally. The vector may
- * allocate memory for exactly that number of elements or around twice that
- * number of elements.
+ * WARNING: This returns a dynamically allocated vector whose memory should
+ * eventually be freed with `Vec_destroy()`. Otherwise, the vector's memory will
+ * leak.
+ *
+ * NOTE: The capacity parameter is only a hint for how many elements the vector
+ * should be prepared to hold. Internally, the vector may allocate memory for
+ * anywhere from exactly that number of elements to around twice that number of
+ * elements.
  *
  * This fails, and returns a null pointer (or, if assertions are enabled, causes
  * an assert crash), if any of the following are true:
