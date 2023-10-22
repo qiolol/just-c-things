@@ -1,20 +1,12 @@
 CC = gcc
 CFLAGS = -std=c11 \
-	 -Wall \
-	 -Wextra \
-	 -Werror \
-	 -pedantic \
-	 -pedantic-errors \
 	 -O3 \
+	 -DNDEBUG \
 
 CXX = g++
 CXXFLAGS = -std=c++11 \
-	   -Wall \
-	   -Wextra \
-	   -Werror \
-	   -pedantic \
-	   -pedantic-errors \
 	   -O3 \
+	   -DNDEBUG \
 
 C_VEC = Vec
 C_VEC_DIR = ../

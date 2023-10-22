@@ -12,6 +12,39 @@ extern "C"
     #include "../Vec.h"
 }
 
+static void print_my_vec_i64(const Vec* v, const size_t size)
+{
+    if (v == nullptr)
+    {
+        return;
+    }
+
+    std::cerr << "My vector   ";
+    for (int i = 0; i < size; ++i)
+    {
+        const int64_t* probe = (const int64_t*) Vec_get(v, i);
+
+        if (probe == nullptr)
+        {
+            std::cerr << "\nNull element pointer!\n";
+            exit(EXIT_FAILURE);
+        }
+
+        std::cerr << "[" << *probe << "]";
+    }
+    std::cerr << "\n";
+}
+
+static void print_std_vec_i64(const std::vector<int64_t>& v)
+{
+    std::cerr << "std::vector ";
+    for (int64_t i : v)
+    {
+        std::cerr << "[" << i << "]";
+    }
+    std::cerr << "\n";
+}
+
 static void report_times(const std::string bench_description,
                         const std::chrono::duration<double> Vec_time,
                         const std::chrono::duration<double> std_vec_time)
@@ -32,13 +65,13 @@ static void report_times(const std::string bench_description,
 
 static std::chrono::duration<double> append_my_vec(const size_t n)
 {
-    auto start = std::chrono::high_resolution_clock::now(); // Start timer
-
     size_t pre_append_cap = 0;
     Vec* v = Vec_new(n, sizeof(int64_t));
 
     assert(v != nullptr);
     pre_append_cap = Vec_capacity(v);
+
+    auto start = std::chrono::high_resolution_clock::now(); // Start timer
 
     for (int64_t i = 0; (size_t) i < n; ++i)
     {
@@ -50,6 +83,9 @@ static std::chrono::duration<double> append_my_vec(const size_t n)
     assert(Vec_capacity(v) == pre_append_cap); // Vector did not resize
     assert(Vec_count(v) == n); // All elements were added
 
+    // Print vector contents to make sure operations weren't optimized out.
+    print_my_vec_i64(v, Vec_count(v));
+
     Vec_destroy(&v);
 
     return end - start;
@@ -57,13 +93,13 @@ static std::chrono::duration<double> append_my_vec(const size_t n)
 
 static std::chrono::duration<double> append_std_vec(const size_t n)
 {
-    auto start = std::chrono::high_resolution_clock::now(); // Start timer
-
     size_t pre_append_cap = 0;
     std::vector<int64_t> v;
 
     v.reserve(n);
     pre_append_cap = v.capacity();
+
+    auto start = std::chrono::high_resolution_clock::now(); // Start timer
 
     for (int64_t i = 0; (size_t) i < n; ++i)
     {
@@ -74,6 +110,9 @@ static std::chrono::duration<double> append_std_vec(const size_t n)
 
     assert(v.capacity() == pre_append_cap); // Vector did not resize
     assert(v.size() == n); // All elements were added
+
+    // Print vector contents to make sure operations weren't optimized out.
+    print_std_vec_i64(v);
 
     return end - start;
 }
@@ -90,13 +129,13 @@ static void append(const size_t n)
 
 static std::chrono::duration<double> append_with_resize_my_vec(const size_t n)
 {
-    auto start = std::chrono::high_resolution_clock::now(); // Start timer
-
     size_t pre_resize_cap = 0;
     Vec* v = Vec_new(n / 2, sizeof(int64_t));
 
     assert(v != nullptr);
     pre_resize_cap = Vec_capacity(v);
+
+    auto start = std::chrono::high_resolution_clock::now(); // Start timer
 
     for (int64_t i = 0; (size_t) i < n; ++i)
     {
@@ -108,6 +147,9 @@ static std::chrono::duration<double> append_with_resize_my_vec(const size_t n)
     assert(Vec_capacity(v) > pre_resize_cap); // Vector resized
     assert(Vec_count(v) == n); // All elements were added
 
+    // Print vector contents to make sure operations weren't optimized out.
+    print_my_vec_i64(v, Vec_count(v));
+
     Vec_destroy(&v);
 
     return end - start;
@@ -115,13 +157,13 @@ static std::chrono::duration<double> append_with_resize_my_vec(const size_t n)
 
 static std::chrono::duration<double> append_with_resize_std_vec(const size_t n)
 {
-    auto start = std::chrono::high_resolution_clock::now(); // Start timer
-
     size_t pre_resize_cap = 0;
     std::vector<int64_t> v;
 
     v.reserve(n / 2);
     pre_resize_cap = v.capacity();
+
+    auto start = std::chrono::high_resolution_clock::now(); // Start timer
 
     for (int64_t i = 0; (size_t) i < n; ++i)
     {
@@ -132,6 +174,9 @@ static std::chrono::duration<double> append_with_resize_std_vec(const size_t n)
 
     assert(v.capacity() > pre_resize_cap); // Vector resized
     assert(v.size() == n); // All elements were added
+
+    // Print vector contents to make sure operations weren't optimized out.
+    print_std_vec_i64(v);
 
     return end - start;
 }
@@ -188,6 +233,9 @@ static std::chrono::duration<double> remove_all_even_my_vec(const size_t n)
     assert(n % 2 == 0); // Assuming `n` is even...
     assert(removed == n / 2); // ...we should've removed half the elts.
 
+    // Print result to make sure operations weren't optimized out.
+    std::cerr << removed << " elements removed from my vector.\n";
+
     Vec_destroy(&v);
 
     return end - start;
@@ -223,6 +271,9 @@ static std::chrono::duration<double> remove_all_even_std_vec(const size_t n)
     assert(n % 2 == 0); // Assuming `n` is even...
     assert(v.size() == n / 2); // ...we should've removed half the elts.
 
+    // Print vector contents to make sure operations weren't optimized out.
+    print_std_vec_i64(v);
+
     return end - start;
 }
 
@@ -247,9 +298,12 @@ static std::chrono::duration<double> insert_my_vec(const size_t n)
     auto start = std::chrono::high_resolution_clock::now(); // Start timer
 
     // ... `n - index` elements should shift to make room for the insertion.
-    assert(true == Vec_insert(v, index, &element, sizeof(element)));
+    Vec_insert(v, index, &element, sizeof(element));
 
     auto end = std::chrono::high_resolution_clock::now(); // End timer
+
+    // Print vector contents to make sure operations weren't optimized out.
+    print_my_vec_i64(v, Vec_count(v));
 
     Vec_destroy(&v);
 
@@ -260,18 +314,19 @@ static std::chrono::duration<double> insert_std_vec(const size_t n)
 {
     std::vector<int64_t> v = std_vec_of_n_seq_i64(n);
     const int64_t element = 123;
-    auto it = v.begin();
     const size_t index = 5;
 
     assert(n > index); // Assuming `n` is larger than the `index`...
-    it += index;
 
     auto start = std::chrono::high_resolution_clock::now(); // Start timer
 
     // ... `n - index` elements should shift to make room for the insertion.
-    v.insert(it, element);
+    v.insert(v.begin() + index, element);
 
     auto end = std::chrono::high_resolution_clock::now(); // End timer
+
+    // Print vector contents to make sure operations weren't optimized out.
+    print_std_vec_i64(v);
 
     return end - start;
 }
@@ -293,9 +348,12 @@ static std::chrono::duration<double> find_my_vec(const size_t n,
 
     auto start = std::chrono::high_resolution_clock::now(); // Start timer
 
-    assert(true == Vec_has(v, &element, sizeof(element)));
+    const bool found = Vec_has(v, &element, sizeof(element));
 
     auto end = std::chrono::high_resolution_clock::now(); // End timer
+
+    // Print result to make sure operations weren't optimized out.
+    std::cerr << "Element found? " << found << "\n";
 
     Vec_destroy(&v);
 
@@ -309,9 +367,14 @@ static std::chrono::duration<double> find_std_vec(const size_t n,
 
     auto start = std::chrono::high_resolution_clock::now(); // Start timer
 
-    assert(std::find(v.begin(), v.end(), element) != v.end()); // Element found
+    auto it = std::find(v.begin(), v.end(), element);
 
     auto end = std::chrono::high_resolution_clock::now(); // End timer
+
+    // Print result to make sure operations weren't optimized out.
+    const bool found = (it != std::end(v));
+
+    std::cerr << "Element found? " << found << "\n";
 
     return end - start;
 }
@@ -370,6 +433,9 @@ static std::chrono::duration<double> apply_my_vec(const size_t n)
         assert(*probe == 0);
     }
 
+    // Print vector contents to make sure operations weren't optimized out.
+    print_my_vec_i64(v, Vec_count(v));
+
     Vec_destroy(&v);
 
     return end - start;
@@ -390,6 +456,9 @@ static std::chrono::duration<double> apply_std_vec(const size_t n)
     {
         assert(*it == 0);
     }
+
+    // Print vector contents to make sure operations weren't optimized out.
+    print_std_vec_i64(v);
 
     return end - start;
 }

@@ -49,5 +49,8 @@ The `benchmark/` subdirectory has a C++ program that benchmarks the vector
 against a `std::vector`. To compile and run it:
 
 ```
-cd benchmark/ ; make && ./benchmark.exe
+cd benchmark/ ; make && ./benchmark.exe 2>/dev/null
 ```
+
+(Muting stderr with `2>/dev/null` is recommended because the results would
+otherwise be flooded by debugging output.)
