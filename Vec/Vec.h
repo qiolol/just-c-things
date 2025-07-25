@@ -45,8 +45,8 @@
 
 /**
  * @typedef
- * The generic vector struct, `typedef`'d so that its implementation details are
- * encapsulated
+ * The generic vector struct, forward declared as an opaque structure so that
+ * its implementation details are encapsulated
  */
 typedef struct Vec Vec;
 
